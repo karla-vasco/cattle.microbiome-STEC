@@ -1,0 +1,140 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#MaASlin2
+```{r}
+#INSTALLATION https://github.com/biobakery/Maaslin2
+
+if(!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("Maaslin2")
+```
+
+
+```{r}
+my_taxonomy <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/Genus_cattle.txt", sep = "\t", header = TRUE, row.names=1, na.strings = "")
+
+my_taxonomy_phy <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/Phylum_abundance.txt", sep = "\t", header = TRUE, row.names=1, na.strings = "")
+
+my_taxonomy_fam <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/Family_cattle.txt", sep = "\t", header = TRUE, row.names=1, na.strings = "")
+
+my_metadata <- read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "")
+
+my_metadata_DIM <- read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/metadata_DIM.csv", sep = ",", header = TRUE, row.names=1, na.strings = "")
+
+my_metadata_LACT <- read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/metadata_LACT.csv", sep = ",", header = TRUE, row.names=1, na.strings = "")
+
+my_metadata_dairy <- read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/metadata_STEC_dairy.csv", sep = ",", header = TRUE, row.names=1, na.strings = "")
+
+```
+
+```{r}
+library(Maaslin2)
+fit_data <- Maaslin2(
+    my_taxonomy, my_metadata_dairy, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/Pforage_genus', transform = "LOG",
+    fixed_effects = c('Pforage'),
+    random_effects = c("Study_ID"),
+    standardize = TRUE)
+```
+
+```{r}
+library(Maaslin2)
+fit_data <- Maaslin2(
+    my_taxonomy, my_metadata, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/Temperature_phylum', transform = "LOG",
+    fixed_effects = c("TempC_max_5D"),
+    random_effects = c('Farm'),
+    normalization = 'TSS',
+    standardize = TRUE)
+```
+
+```{r}
+library(Maaslin2)
+fit_data <- Maaslin2(
+    my_taxonomy, my_metadata_LACT, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/LACT_number_phylum', transform = "LOG",
+    fixed_effects = c("LACT"),
+    random_effects = c('Farm'),
+    normalization = 'TSS',
+    standardize = TRUE)
+```
+
+```{r}
+library(Maaslin2)
+fit_data <- Maaslin2(
+    my_taxonomy, my_metadata_DIM, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/DIM_genus', transform = "LOG",
+    fixed_effects = c("DIM"),
+    random_effects = c('Farm'),
+    normalization = 'TSS',
+    standardize = TRUE)
+```
+
+
+```{r}
+library(Maaslin2)
+fit_data <- Maaslin2(
+    my_taxonomy, my_metadata, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/Forage_Hum_phy', transform = "LOG",
+    fixed_effects = c("Pforage","Rel_hum_perc_morning"),
+    random_effects = c('Study_ID'),
+    normalization = 'TSS',
+    standardize = TRUE)
+```
+
+
+
+```{r}
+library(Maaslin2)
+fit_data <- Maaslin2(
+    my_taxonomy_fam, my_metadata, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/STEC_family', transform = "LOG",
+    fixed_effects = c('STEC_prev_group',"STEC_pos", "STEC_prev"),
+    random_effects = c("Farm"),
+    normalization = 'TSS',
+    standardize = TRUE)
+
+fit_data <- Maaslin2(
+    my_taxonomy_phy, my_metadata, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/STEC_phylum', transform = "LOG",
+    fixed_effects = c('STEC_prev_group',"STEC_pos", "STEC_prev"),
+    random_effects = c("Farm"),
+    normalization = 'TSS',
+    standardize = TRUE)
+
+fit_data <- Maaslin2(
+    my_taxonomy, my_metadata, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/STEC_genus', transform = "LOG",
+    fixed_effects = c('STEC_prev_group',"STEC_pos", "STEC_prev"),
+    random_effects = c("Farm"),
+    normalization = 'TSS',
+    standardize = TRUE)
+```
+
+
+```{r}
+my_metadata <- read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects/metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "")
+
+library(dplyr)
+my_metadata_STEC <- my_metadata %>%
+  filter(STEC_pos == c("STEC", "Control"))
+
+my_metadata_STEC_EPEC <- my_metadata %>%
+  filter(STECp_EPECp == c("STEC,EPEC", "Control"))
+```
+
+```{r}
+library(Maaslin2)
+fit_data <- Maaslin2(
+    my_taxonomy, my_metadata, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/Farm_phylum', transform = "LOG",
+    fixed_effects = c('Farm'),
+    random_effects = c('Study_ID'),
+    normalization = 'TSS',
+    standardize = TRUE)
+```
+
+
+```{r}
+fit_data <- Maaslin2(
+    my_taxonomy, my_metadata_STEC_EPEC, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/STEC_EPEC', transform = "LOG",
+    fixed_effects = c('STECp_EPECp'),
+    random_effects = c('Study_ID', 'Farm'),
+    normalization = 'TSS',
+    standardize = TRUE)
+```
+

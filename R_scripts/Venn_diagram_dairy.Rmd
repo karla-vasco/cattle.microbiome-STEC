@@ -1,0 +1,81 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+forage <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/Pforage_genus/significant_results.tsv", sep = "\t", header = TRUE, na.strings = "") %>% 
+  select(feature)
+forage_character <- t(forage) %>% as.character(forage[1,])
+
+temperature <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/Temperature_genus/significant_results.tsv", sep = "\t", header = TRUE, na.strings = "") %>% 
+  select(feature)
+temperature_character <- t(temperature) %>% as.character(temperature[1,])
+
+lact <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/LACT_number_genus/significant_results.tsv", sep = "\t", header = TRUE, na.strings = "") %>% 
+  select(feature)
+lact_character <- t(lact) %>% as.character(lact[1,])
+
+dim <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/DIM_genus/significant_results.tsv", sep = "\t", header = TRUE, na.strings = "") %>% 
+  select(feature)
+dim_character <- t(dim) %>% as.character(dim[1,])
+
+
+stec <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/STEC_genus_dairy_studyID/significant_results.tsv", sep = "\t", header = TRUE, na.strings = "") %>% 
+  dplyr::filter(metadata == "STEC_pos") %>% 
+  select(feature)
+stec_character <- t(stec) %>% as.character(stec[1,])
+
+temp <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/Temperature_genus/significant_results.tsv", sep = "\t", header = TRUE, na.strings = "") %>% 
+  select(feature)
+temp_character <- t(temp) %>% as.character(temp[1,])
+```
+
+```{r}
+x <- list(
+  Forage = forage_character, 
+  DIM = dim_character,
+  STEC = stec_character,
+  Temperature = temp_character
+  )
+```
+
+
+```{r}
+if (!require(devtools)) install.packages("devtools")
+devtools::install_github("yanlinlin82/ggvenn")
+```
+
+
+```{r fig.width=7, fig.height=7}
+library(ggvenn)
+venn_STEC = ggvenn(
+  x, 
+  fill_color = c("#00FF00", "yellow", "#CD534CFF","#0073C2FF"),
+  stroke_size = 0.5, set_name_size = 4, text_size = 4
+  )
+venn_STEC
+```
+```{r}
+
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/")
+# mm to inch
+setWidth = 7
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='venn_STEC_dairy.pdf',width=setWidth,height=7,pointsize=setFontSize)
+venn_STEC
+dev.off()
+
+```
+
+
+
+
+

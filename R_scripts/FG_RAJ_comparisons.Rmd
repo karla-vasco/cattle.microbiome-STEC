@@ -1,0 +1,450 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Libraries
+```{r}
+library("phyloseq")
+library("ggplot2")
+library("ape")
+library("gridExtra")
+library("ggpubr")
+library("ggsignif")
+library(forcats)
+library(vegan)
+library(viridis)
+library(cowplot)
+```
+
+#Physeq object
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects")
+
+#read in otu table
+otu_table = read.csv("otu_table_97.csv",sep=",",row.names=1)
+otu_table=as.matrix(otu_table,rownames=TRUE)
+#read in taxonomy
+taxonomy = read.csv("taxonomy_97.csv",sep=",",row.names=1)
+taxonomy=as.matrix(taxonomy)
+#read in metadata
+metadata=read.table("metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+metadata
+phy_tree = read_tree("tree_97.nwk")
+```
+##Generating a phyloseq object
+```{r}
+#import as phyloseq objects
+OTU = otu_table(otu_table,taxa_are_rows=TRUE)
+TAX = tax_table(taxonomy)
+META = sample_data(metadata)
+META$Phase=as.factor(META$Phase)
+META$STEC=as.factor(META$STEC)
+META$STEC=as.factor(META$STEC)
+META$STEC_prev_group <- factor(META$STEC_prev_group, levels = c("Low","High"))
+
+# Sanity checks for consistent OTU names
+taxa_names(TAX)
+taxa_names(OTU)
+taxa_names(phy_tree)
+
+# Same sample names
+sample_names(OTU)
+sample_names(META)
+
+#(tree was already imported as a phyloseq object)
+physeq=phyloseq(OTU,TAX,META,phy_tree)
+```
+
+#Filtering samples
+```{r}
+physeq_two = subset_taxa(physeq, Order != "Chloroplast")
+physeq_three = subset_taxa(physeq_two, Family != "Mitochondria")
+physeq_hindgut <- subset_samples(physeq_three, Type%in%c("RAJ","FG"))
+```
+
+```{r}
+physeq <- subset_samples(physeq_hindgut, FG_RAJ.pair%in%c("1"))
+```
+
+#Alpha diversity
+```{r fig.width=10, fig.height=40}
+alpha_diversity <- estimate_richness(physeq)
+
+df_alpha <- data.frame(alpha_diversity, sample_data(physeq))
+
+df <- reshape2::melt(df_alpha, measure.var=c("Shannon","Chao1"),id.vars=c("Farm","Phase","Type","Source","Phase_type"))
+df$value = as.numeric(df$value)
+df$Farm_Phase_Type = NA #Create new column
+
+df$Farm_Phase_Type = paste(df$Farm,df$Type,df$Phase) #New column with concatenated values
+
+#selecting the rows corresponding to each index from the main dataframe
+shannon = dplyr::filter(df, variable == "Shannon")
+chao = dplyr::filter(df, variable == "Chao1")
+```
+
+```{r}
+################ Modify these variables as needed #################
+x_axis_sha = shannon$Farm_Phase_Type #variable to test
+x_axis_chao = chao$Farm_Phase_Type #variable to test
+bar_color = "#F8766D" #1B_green="#00BA38" 2D-9D_blue="#619CFF" 8B_red="#F8766D"
+my_comparisons <-  list(c("1B RAJ 1", "1B FG 1"),c("1B RAJ 2", "1B FG 2"),c("1B RAJ 3", "1B FG 3"),c("1B RAJ 4", "1B FG 4"),c("2D RAJ 1", "2D FG 1"),c("2D RAJ 2", "2D FG 2"),c("2D RAJ 3", "2D FG 3"),c("2D RAJ 4", "2D FG 4"), c("4D RAJ 2", "4D FG 2"),c("4D RAJ 3", "4D FG 3"),c("4D RAJ 4", "4D FG 4"))
+#p-value between groups 
+stat_lab_position_x = 0.3
+stat_lab_position_y_sha = 7
+stat_lab_position_y_chao = 2200 #shannon = 7 chao1 = 1100-2000
+ ### To customize the colors of your bars. Copy and paste this code at the end of the boxplot
+```
+
+```{r}
+shannon1 <- shannon %>% #shannon_box, chao1_box
+  ggplot(aes(x = x_axis_sha, y = value, fill = Farm)) +
+  geom_boxplot(outlier.shape = NA) +
+  labs(y="Shannon", x="Phase") + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme_classic() + 
+  theme(legend.position = "top",axis.title.x=element_blank()) +
+  ylim(4,6.3)+
+  scale_fill_manual(values =c("#00BA38","#619CFF","#404788FF")) +
+  theme(axis.text = element_text(colour = "black",angle = 90), 
+    strip.text = element_text(colour = "black"))
+
+# Extract the legend. Returns a gtable
+leg <- get_legend(shannon1)
+
+# Convert to a ggplot and print
+legend_sha = as_ggplot(leg)
+```
+
+```{r}
+##################### Running box plot #############################
+shannon_box <- shannon %>% #shannon_box, chao1_box
+  mutate(x_axis_sha = fct_relevel(x_axis_sha, "1B RAJ 1", "1B FG 1","1B RAJ 2", "1B FG 2","1B RAJ 3", "1B FG 3","1B RAJ 4", "1B FG 4","2D RAJ 1", "2D FG 1","2D RAJ 2", "2D FG 2","2D RAJ 3", "2D FG 3","2D RAJ 4", "2D FG 4","4D RAJ 2", "4D FG 2","4D RAJ 3", "4D FG 3","4D RAJ 4", "4D FG 4")) %>% #Optional if you need a specific x_axis order 
+  ggplot(aes(x = x_axis_sha, y = value, fill = Farm, shape=x_axis_sha)) +
+  geom_boxplot(outlier.shape = NA) +
+  labs(y="Shannon", x="Phase") + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme_classic() + 
+  theme(legend.position = "none",axis.title.x=element_blank()) +
+  ylim(4,6.3)+
+  stat_compare_means(comparisons = my_comparisons, label.y = c(5.6,5.6,5.6,5.6,5.7,5.9,6.1,6,6.1,6,6),symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = FALSE) +
+  scale_fill_manual(values =c("#00BA38","#619CFF","#404788FF")) +
+  theme(axis.text = element_text(colour = "black",angle = 90), 
+    strip.text = element_text(colour = "black"))
+
+chao1_box <- chao %>% #shannon_box, chao1_box
+  mutate(x_axis_chao = fct_relevel(x_axis_chao, "1B RAJ 1", "1B FG 1","1B RAJ 2", "1B FG 2","1B RAJ 3", "1B FG 3","1B RAJ 4", "1B FG 4","2D RAJ 1", "2D FG 1","2D RAJ 2", "2D FG 2","2D RAJ 3", "2D FG 3","2D RAJ 4", "2D FG 4","4D RAJ 2", "4D FG 2","4D RAJ 3", "4D FG 3","4D RAJ 4", "4D FG 4")) %>% #Optional if you need a specific x_axis order 
+  ggplot(aes(x = x_axis_chao, y = value, fill = Farm, shape=x_axis_chao)) +
+  geom_boxplot(outlier.shape = NA) +
+  labs(y="Chao1", x="Phase") + 
+  ylim(100,1600)+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme_classic() + 
+  theme(legend.position = "none",axis.title.x=element_blank()) + stat_compare_means(comparisons = my_comparisons, label.y = c(1000,800,600,800,1100,1000,1300,1300,1100,1400,1500), symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = FALSE) +
+  scale_fill_manual(values =c("#00BA38","#619CFF","#404788FF")) +
+  theme(axis.text = element_text(colour = "black",angle = 90), 
+    strip.text = element_text(colour = "black"))
+```
+
+```{r}
+alpha = ggarrange(shannon_box, chao1_box, nrow = 1, ncol = 2, align="hv", labels = c("A","B"))
+alpha
+```
+
+#Plot with densities
+```{r}
+beta_bray <- ordinate(physeq, "PCoA", "bray") #RUN this only ONCE because it takes a lot of time
+```
+
+```{r}
+beta_wu <- ordinate(physeq, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
+```
+
+```{r}
+bray = plot_ordination(physeq, beta_bray, type="split", color="Type", shape="Phase") + theme_bw()+labs(colour = "Farm", shape="Phase") + scale_color_manual(values=c("#00BA38","#619CFF","#404788FF"))
+wu = plot_ordination(physeq, beta_wu, type="Farm_Phase_Type", color="Type", shape="Phase") + theme_bw()+labs(colour = "Farm", shape="Phase") +  scale_color_manual(values=c("#00BA38","#619CFF","#404788FF"))
+#scale_color_viridis(begin=0,end=1,option="C") 
+#To add arrows https://neavemj.github.io/posts/coralMicrobiome
+Pcoa  = ggarrange(bray,wu,nrow = 1, ncol = 2, align="hv", labels = c("B","WU")) 
+Pcoa
+```
+
+```{r}
+
+beta_scatter = as.data.frame(beta_bray[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+pmain_wu = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Type",  shape = "Phase", palette = c("#B47846","#4782B4"),ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +
+  labs(x = "Principal Coordinate 1 (22.6%)", y = "Principal Coordinate 2 (6.7%)", colour = "Type", fill = "Type", shape = "Phase") + 
+  rremove("legend") + 
+  facet_wrap(vars(Farm),nrow=1,ncol=3,scales="free")+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  #annotate("text", x = -0.12, y = -0.08, label = "PERMANOVA, p <0.001\nANOVA, p=0.045", colour = "black") +
+  ggpubr::fill_palette(values =c("#00BFC4","#F8766D","#404788FF"))
+pmain_wu
+```
+
+
+#BETA DIVERSITY
+```{r}
+physeq_type = subset_samples(physeq_hindgut, FG_RAJ.pair%in%c("1"))
+physeq = subset_samples(physeq_type, Farm%in%c("4D"))
+beta_wu <- ordinate(physeq, "PCoA", "wunifrac")
+```
+#Plots to see the axis weight %
+```{r}
+wu_plot = plot_ordination(physeq, beta_wu, color="Type", shape="Phase") + theme_bw()+labs(colour = "Farm", shape="Phase")
+wu_plot
+```
+
+#Statistics beta-diversity
+```{r}
+## PERMANOVA
+library(vegan)
+wuinfrac_dist = phyloseq::distance(physeq, method="wunifrac") #RUN this only once because it takes a lot of time
+adonis_wunifrac = adonis(wuinfrac_dist ~ sample_data(physeq)$Type)
+adonis_wunifrac
+
+## Significant PERMANOVA indicates that centroid (or spatial median) among groups is different and/or with-group dispersion among groups is different
+
+## PERMDISP
+wuni_disp <-betadisper(wuinfrac_dist, sample_data(physeq)$Type, type=c("median"))
+anova(wuni_disp)
+
+## If PERMANOVA and PERMDISP are both significant, you can use plotting to tell if PERMANOVA was significant based on centroid (or spatial median)
+plot(wuni_disp)
+#?plot.betadisper
+
+## Would look better with higher replication for groups
+plot(wuni_disp, label = F)
+
+## Plot with 1 standard deviation ellipses around the group medians
+## sample size issue here, but you get the idea
+plot(wuni_disp, label = F, hull = F, ellipse = T)
+
+## Within-group dispersion that PERMDISP is testing
+boxplot(wuni_disp, las = 2, cex.lab=1.5)
+?boxplot
+
+## pairwise p-values
+TukeyHSD(wuni_disp)
+TukeyHSD.betadisper(wuni_disp)
+
+```
+
+#1B beta
+```{r}
+supp.labs <- c("1B R^2=0.02, p=0.001")
+names(supp.labs) <- c("1B")
+
+beta_scatter = as.data.frame(beta_wu[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+wu_1B = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Type", shape = "Phase", palette = c("#B47846","#4782B4"), ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +
+  labs(x = "PCoA 1 (15.1%)", y = "PCoA 2 (8%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
+  rremove("legend") + 
+  facet_wrap(vars(Farm),nrow=1,ncol=1,scales="free",labeller = labeller(Farm = supp.labs))+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none")   #annotate("text", x = -0.12, y = -0.08, label = "PERMANOVA, p <0.001\nANOVA, p=0.045", colour = "black") 
+wu_1B
+```
+#2D beta
+```{r}
+supp.labs <- c("2D R^2=0.03, p=0.001")
+names(supp.labs) <- c("2D")
+
+beta_scatter = as.data.frame(beta_wu[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+wu_2D = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Type", shape="Phase", palette = c("#B47846","#4782B4"), ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +
+  labs(x = "PCoA 1 (18.8%)", y = "PCoA 2 (7.3%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
+  rremove("legend") + 
+  facet_wrap(vars(Farm),nrow=1,ncol=1,scales="free",labeller = labeller(Farm = supp.labs))+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none")   #annotate("text", x = -0.12, y = -0.08, label = "PERMANOVA, p <0.001\nANOVA, p=0.045", colour = "black") 
+wu_2D
+```
+
+#4D beta
+```{r}
+supp.labs <- c("4D R^2=0.01,p=0.63")
+names(supp.labs) <- c("4D")
+
+beta_scatter = as.data.frame(beta_wu[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+wu_4D = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Type", shape="Phase", palette = c("#B47846","#4782B4"), ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +
+  labs(x = "PCoA 1 (19.3%)", y = "PCoA 2 (9.6%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
+  rremove("legend") + 
+  facet_wrap(vars(Farm),nrow=1,ncol=1,scales="free",labeller = labeller(Farm = supp.labs))+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none")   #annotate("text", x = -0.12, y = -0.08, label = "PERMANOVA, p <0.001\nANOVA, p=0.045", colour = "black") 
+wu_4D
+```
+
+```{r}
+plot_leg <-ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Type", shape="Phase", palette = c("#B47846","#4782B4"), ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +
+  labs(x = "PCoA 1 (19.3%)", y = "PCoA 2 (9.6%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
+  rremove("legend") + 
+  facet_wrap(vars(Farm),nrow=1,ncol=1,scales="free",labeller = labeller(Farm = supp.labs))+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "top")   #annotate("text", x = -0.12, y = -0.08, label = "PERMANOVA, p <0.001\nANOVA, p=0.045", colour = "black") 
+
+# Extract the legend. Returns a gtable
+leg_wu <- get_legend(plot_leg)
+
+# Convert to a ggplot and print
+legend_wu = as_ggplot(leg_wu)
+```
+
+```{r}
+beta_type = ggarrange(wu_1B,wu_2D,wu_4D, nrow=1,ncol=3)
+FG_RAJ_div  = ggarrange(legend_sha,alpha,leg_wu,beta_type,nrow = 4, ncol = 1, align="hv", labels = c("","","","C"), heights=c(.2,1,.2,1))
+FG_RAJ_div
+```
+
+```{r}
+
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2020/june")
+# mm to inch
+setWidth = 187*0.0397
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='FG_RAJ_diversity.pdf',width=setWidth,height=6,pointsize=setFontSize)
+FG_RAJ_div
+dev.off()
+
+```
+
+#Alpha diversity FG_RAJ pairs
+```{r}
+my_comparisons <- list(c("FG", "RAJ"))
+
+##################### Running box plot #############################
+
+sha_farm_FR <- shannon %>% #shannon_box, chao1_box
+  ggplot(aes(x = Type, y = value, fill = Type)) +
+#  geom_violin(width=1.4) +
+  geom_boxplot(outlier.shape = NA) +
+  #geom_boxplot(outlier.shape = NA) +
+geom_jitter(width=0.2,alpha=0.2) +
+  labs(y="Shannon", x="Type") +
+  # annotate("text", x = 2.5, y = 3.5, label = "p = 0.77", colour = "black") +
+  ylim(3,6.8) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme_classic() + 
+  theme(legend.position = "none",axis.title.x=element_blank()) + stat_compare_means(comparisons = my_comparisons, label.y = c(6.1,6.2,6.4,6.6,6.8,7.2), symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = F) +
+  stat_compare_means(label.y = 6.6, label.x.npc = .3) +
+  scale_fill_manual(values =c("#B47846","#4782B4"))
+
+cha_farm_FR <- chao %>% 
+  ggplot(aes(x = Type, y = value, fill = Type)) +
+#  geom_violin(width=1.4) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width=0.2,alpha=0.2) +
+  labs(y="Chao1", x="Type") + 
+ #   annotate("text", x = 2.5, y = 3.5, label = "p = 0.77", colour = "black") +
+  ylim(100,1900) +theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme_classic() + 
+  theme(legend.position = "none",axis.title.x=element_blank()) + stat_compare_means(comparisons = my_comparisons, label.y = c(1500,1600,1700,1800,1900,2100), symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = FALSE) +
+  stat_compare_means(label.y = 1800, label.x.npc = .3) +
+  scale_fill_manual(values =c("#B47846","#4782B4"))
+```
+
+#BETA DIVERSITY ALL
+```{r}
+physeq_type = subset_samples(physeq_hindgut, FG_RAJ.pair%in%c("1"))
+physeq = subset_samples(physeq_type)
+beta_wu <- ordinate(physeq, "PCoA", "wunifrac")
+```
+
+#Vegan objects
+```{r}
+data_obj = pssd2veg(physeq) #mapping file
+otu_obj = psotu2veg(physeq) #otu table
+#genus_table = cattle_df_gen3 #genus table
+```
+
+#ANOSIM
+```{r}
+#anosim(genus_table, grouping=data_obj$Farm, permutations = 999, distance = "bray", strata = NULL, parallel = getOption("mc.cores"))
+anosim(otu_obj, grouping=data_obj$Type, permutations = 999, distance = "bray", strata = NULL, parallel = getOption("mc.cores"))
+```
+
+#Weighted unifrac ordination with densities
+```{r}
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.0067, ",paste(italic('p')),"=0.06"))
+label_anosim <- expression(paste("ANOSIM, R=0.037, ", paste(italic('p')),"=0.001"))
+
+
+#"PERMANOVA, R^2=0.007,p =0.06\nANOSIM, R=0.037; p=0.001"
+beta_scatter = as.data.frame(beta_wu[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+pmain_wuF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Type", palette =   c("#B47846","#4782B4"),ellipse = TRUE, ellipse.level=.5,mean.point = T, mean.point.size = 5, star.plot = F) +labs(x = "PCoA 1 (24.3%) ", y = "PCoA 2 (6.5%)", colour = "Farm", fill = "Farm") + rremove("legend") +annotate("text", x = -0.04, y = -0.10, label = label_perm, colour = "black") + annotate("text", x = -0.04, y = -0.08, label = label_anosim, colour = "black") 
+pmain_wuF
+
+xdens <- axis_canvas(pmain_wuF, axis = "x")+
+  geom_density(data = beta_meta, aes(x = Axis.1, fill = Type),
+              alpha = 0.7, size = 0.2)+
+   theme(legend.position = "none") +
+  scale_fill_manual(values =c("#B47846","#4782B4"))
+# Marginal densities along y axis
+# Need to set coord_flip = TRUE, if you plan to use coord_flip()
+ydens <- axis_canvas(pmain_wuF, axis = "y", coord_flip = TRUE)+
+     theme(legend.position = "none") +
+  geom_density(data = beta_meta, aes(x = Axis.2, fill = Type),
+                alpha = 0.7, size = 0.2)+
+  coord_flip()+
+  scale_fill_manual(values =c("#B47846","#4782B4"))
+p1 <- insert_xaxis_grob(pmain_wuF, xdens, grid::unit(.2, "null"), position = "top")
+p2<- insert_yaxis_grob(p1, ydens, grid::unit(.2, "null"), position = "right")
+
+wu_plotF = ggdraw(p2)
+wu_plotF
+```
+
+#Get legend
+```{r}
+plot_wuF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Type", palette =   c("#B47846","#4782B4"),ellipse = TRUE, ellipse.level=.5,mean.point = T, mean.point.size = 5, star.plot = F) +labs(x = "Principal Coordinate 1 (24.3%) ", y = "Principal Coordinate 2 (6.5%)", colour = "Type", fill = "Type")  +annotate("text", x = -0.05, y = -0.08, label = "PERMANOVA, p <0.047\nANOVA, p=0.97", colour = "black")
+
+# Extract the legend. Returns a gtable
+legF <- get_legend(plot_wuF)
+
+# Convert to a ggplot and print
+legend_wuF = as_ggplot(legF)
+legend_wuF
+```
+
+```{r}
+alphaFR = ggarrange(sha_farm_FR,cha_farm_FR,nrow = 1, ncol = 2, align="hv", labels = c("A","B")) 
+gut_divFR = ggarrange(legend_wuF,alphaFR,wu_plotF,nrow = 3, ncol = 1, align="hv", heights = c(.2,1,1,1),labels = c("","","C")) 
+gut_divFR
+```
+
+```{r}
+
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2020/june")
+# mm to inch
+setWidth = 183*0.039370
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='FG_RAJ_diversity_general.pdf',width=setWidth,height=7,pointsize=setFontSize)
+gut_divFR
+dev.off()
+
+```

@@ -1,0 +1,708 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+#Libraries
+```{r}
+library("phyloseq")
+library("ggplot2")
+library("ape")
+library("gridExtra")
+library("ggpubr")
+library("ggsignif")
+library(forcats)
+library(vegan)
+library(viridis)
+library(cowplot)
+```
+
+#Importing files for microbiome analysis with phyloseq
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects")
+
+#read in otu table
+otu_table = read.csv("otu_table_97.csv",sep=",",row.names=1)
+otu_table=as.matrix(otu_table,rownames=TRUE)
+#read in taxonomy
+taxonomy = read.csv("taxonomy_97.csv",sep=",",row.names=1)
+taxonomy=as.matrix(taxonomy)
+#read in metadata
+metadata=read.table("metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+metadata
+phy_tree = read_tree("tree_97.nwk")
+```
+
+##Generating a phyloseq object 
+```{r}
+#import as phyloseq objects
+OTU = otu_table(otu_table,taxa_are_rows=TRUE)
+TAX = tax_table(taxonomy)
+META = sample_data(metadata)
+META$Phase=as.factor(META$Phase)
+META$STEC=as.factor(META$STEC)
+META$STEC=as.factor(META$STEC)
+META$STEC_prev_group <- factor(META$STEC_prev_group, levels = c("Low","High"))
+
+# Sanity checks for consistent OTU names
+taxa_names(TAX)
+taxa_names(OTU)
+taxa_names(phy_tree)
+
+# Same sample names
+sample_names(OTU)
+sample_names(META)
+
+#(tree was already imported as a phyloseq object)
+physeq=phyloseq(OTU,TAX,META,phy_tree)
+```
+
+#Filtering samples and taxa for further analyses
+```{r}
+physeq_two = subset_taxa(physeq, Order != "Chloroplast")
+physeq_three = subset_taxa(physeq_two, Family != "Mitochondria")
+physeq_hindgut <- subset_samples(physeq_three, Type%in%c("RAJ","FG"))
+physeq_STEC <- subset_samples(physeq_hindgut, STEC%in%c("1","0"))
+physeq = physeq_STEC
+```
+
+#Alpha-diversity calculation  (Shannon and Chao1 indices) 
+```{r fig.width=10, fig.height=40}
+alpha_diversity <- estimate_richness(physeq, measures = c("Shannon", "Chao1"))
+df_alpha <- data.frame(alpha_diversity, sample_data(physeq))
+df <- reshape2::melt(df_alpha, measure.var=c("Shannon","Chao1"),id.vars=c("Phase","Farm","STEC","Type","LACT","Lymph","Neut","Monocytes","Lymphocyte.Monocyte.ratio","Lymphocytes","STEC_prev_group", "STEC_comp","STEC_EPEC_comp"))
+df$value = as.numeric(df$value)
+df$Phase =as.factor(df$Phase)
+
+#selecting the rows corresponding to each index from the main dataframe
+shannon = dplyr::filter(df, variable == "Shannon")
+chao = dplyr::filter(df, variable == "Chao1")
+```
+
+
+#Alpha-diversity comparisons between farms (plot and stats)
+```{r}
+library(ggsci)
+my_comparisons <- list(c("1B", "2D"), c("2D", "4D"), c("4D", "9D"), c("9D","8B"), c("2D","9D"), c("1B","8B"))
+
+##################### Running box plot #############################
+
+sha_farm <- shannon %>% #shannon_box, chao1_box
+  mutate(Farm = fct_relevel(Farm, "1B","2D","4D","9D","8B")) %>% #Optional if you need a specific x_axis order 
+  ggplot(aes(x = Farm, y = value, fill = STEC_prev_group)) +
+ # geom_violin(width=1.4) +
+  geom_boxplot(outlier.shape = NA) +
+  #geom_boxplot(outlier.shape = NA) +
+ # geom_point(alpha=0.5, position = position_jitterdodge()) +
+  geom_jitter(color="black", size=0.4, alpha=0.5) +
+  labs(y="Shannon", x="Farm") +
+    annotate("text", x = 3, y = 7.8, label = "Kruskal-Wallis, p < 2.2e-16", colour = "black") +
+  ylim(3,8) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme_classic() + 
+  theme(legend.position = "none",axis.title.x=element_blank()) + stat_compare_means(comparisons = my_comparisons, label.y = c(6.1,6.3,6.5,6.65,6.8,7.2), symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = F) +
+  #stat_compare_means(label.y = 7.7, label.x.npc = .3) +
+   scale_fill_aaas()
+#  scale_fill_manual(values =c("#73D055FF","#404788FF","#56B4E9","#E69F00","#D55E00")) + scale_shape_manual(values = c(20,3,20))
+
+cha_farm <- chao %>% #shannon_box, chao1_box
+ mutate(Farm = fct_relevel(Farm, "1B","2D","4D","9D","8B")) %>% #Optional if you need a specific x_axis order 
+  ggplot(aes(x = Farm, y = value, fill = STEC_prev_group)) +
+ # geom_violin(width=1.4) +
+  geom_boxplot(outlier.shape = NA) +
+#  geom_point(alpha=0.5, position = position_jitterdodge()) +
+  geom_jitter(color="black", size=0.4, alpha=0.5) +
+   labs(y="Chao1", x="Farm") + 
+    annotate("text", x = 3, y = 2400, label = "Kruskal-Wallis, p < 2.2e-16", colour = "black") +
+  ylim(100,2500) +theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme_classic() + 
+  theme(legend.position = "none",axis.title.x=element_blank()) + stat_compare_means(comparisons = my_comparisons, label.y = c(1500,1600,1700,1800,1900,2100), symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = FALSE) +
+#  stat_compare_means(label.y = 2400, label.x.npc = .3) +
+ scale_fill_aaas()
+  # scale_fill_manual(values =c("#73D055FF","#404788FF","#56B4E9","#E69F00","#D55E00")) +scale_shape_manual(values=c(20,3,20))
+sha_farm
+cha_farm
+```
+
+##Arrange alpha-diversity plots as a single figure 
+```{r}
+alphaF = ggarrange(sha_farm,cha_farm,nrow = 1, ncol = 2, align="hv", labels = c("A","B")) 
+```
+
+##Export alpha-diversity plot as a PDF
+```{r}
+
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2020/june")
+# mm to inch
+setWidth = 183*0.039370
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='alpha_div_farm.pdf',width=setWidth,height=4.5,pointsize=setFontSize)
+alphaF
+dev.off()
+
+```
+
+#Alpha diversity plot between STEC prevalence groups
+```{r}
+library(tidyverse)
+library("ggsci") #Color palettes
+library(ggpubr)
+library(rstatix)
+library(scales)
+```
+
+##Shannon index plot
+```{r}
+shannon_boxplot_prev = ggboxplot(shannon, x = "STEC_prev_group", y = "value", color = "STEC_prev_group", palette = "lancet", fill = "STEC_prev_group", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F, legend = "none") +labs(y = "Shannon", colour = "STEC prevalence", fill = "STEC prevalence") + scale_fill_lancet(alpha = 0.5) +
+  stat_compare_means(label.x.npc = c(.25),label.y = 6.3)
+
+shannon_boxplot_prev
+```
+##Chao1 index plot
+```{r}
+chao1_boxplot_prev = ggboxplot(chao, x = "STEC_prev_group", y = "value", color = "STEC_prev_group", palette = "lancet", fill = "STEC_prev_group", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F, legend = "none") +labs(y = "Chao1", colour = "STEC prevalence", fill = "STEC prevalence") + scale_fill_lancet(alpha = 0.5) +
+  stat_compare_means(label.x.npc = c(.25),label.y = 6.3)
+
+chao1_boxplot_prev
+```
+
+##Arrange alpha-diversity plots as a single figure 
+```{r}
+alpha_STEC_groups = ggarrange(shannon_boxplot_prev,chao1_boxplot_prev,nrow = 2, ncol = 1, align="hv", labels = c("A","B")) 
+```
+
+
+#Weighted unifrac 
+##Weighted Unifrac ordination and preliminary plot
+```{r}
+beta_wu_farm <- ordinate(physeq, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
+beta_wu_plot = plot_ordination(physeq, beta_wu_farm, type="Farm", color="Farm", shape="Farm", title="PCoA Weighted Unifrac") + stat_ellipse(type = "t", linetype = 3) + stat_ellipse(type = "t") + theme_bw()+labs(colour = "Farm") #To add arrows https://neavemj.github.io/posts/coralMicrobiome
+beta_wu_plot
+```
+
+##Weighted Unifrac stats among farms
+```{r}
+## PERMANOVA
+library(vegan)
+wuinfrac_dist = phyloseq::distance(physeq, method="wunifrac") #RUN this only once because it takes a lot of time
+adonis_wunifrac = adonis(wuinfrac_dist ~ sample_data(physeq)$Farm)
+adonis_wunifrac
+
+## Significant PERMANOVA indicates that centroid (or spatial median) among groups is different and/or with-group dispersion among groups is different
+
+## PERMDISP
+wuni_disp <-betadisper(wuinfrac_dist, sample_data(physeq)$Farm, type=c("median"))
+anova(wuni_disp)
+
+## If PERMANOVA and PERMDISP are both significant, you can use plotting to tell if PERMANOVA was significant based on centroid (or spatial median)
+plot(wuni_disp)
+#?plot.betadisper
+
+## Would look better with higher replication for groups
+plot(wuni_disp, label = F)
+
+## Plot with 1 standard deviation ellipses around the group medians
+## sample size issue here, but you get the idea
+plot(wuni_disp, label = F, hull = F, ellipse = T)
+
+## Within-group dispersion that PERMDISP is testing
+boxplot(wuni_disp, las = 2, cex.lab=1.5)
+?boxplot
+
+## pairwise p-values
+TukeyHSD(wuni_disp)
+
+scores(wuni_disp, 1:4, display = "centroids")
+```
+
+##Weighted Unifrac plot among farms
+```{r}
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.23, ", paste(italic('p')),"=0.001"))
+
+beta_scatter = as.data.frame(beta_wu_farm[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+pmain_wuF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Farm", shape = "STEC_pos", palette =   c("#73D055FF","#56B4E9","#404788FF","#D55E00","#E69F00"),ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +labs(x = "PCoA 1 (18.6%) ", y = "PCoA 2 (6.3%)", colour = "STEC_prev_group", fill = "Farm") + rremove("legend") +annotate("text", x = -0.08, y = -0.08, label = label_perm, colour = "black") +scale_shape_manual(values=c(20,3))
+pmain_wuF
+
+xdens <- axis_canvas(pmain_wuF, axis = "x")+
+  geom_density(data = beta_meta, aes(x = Axis.1, fill = Farm),
+              alpha = 0.7, size = 0.2)+
+   theme(legend.position = "none") +
+  scale_fill_manual(values =c("#73D055FF","#56B4E9","#404788FF","#D55E00","#E69F00"))
+# Marginal densities along y axis
+# Need to set coord_flip = TRUE, if you plan to use coord_flip()
+ydens <- axis_canvas(pmain_wuF, axis = "y", coord_flip = TRUE)+
+     theme(legend.position = "none") +
+  geom_density(data = beta_meta, aes(x = Axis.2, fill = Farm),
+                alpha = 0.7, size = 0.2)+
+  coord_flip()+
+  scale_fill_manual(values =c("#73D055FF","#56B4E9","#404788FF","#D55E00","#E69F00"))
+p1 <- insert_xaxis_grob(pmain_wuF, xdens, grid::unit(.2, "null"), position = "top")
+p2<- insert_yaxis_grob(p1, ydens, grid::unit(.2, "null"), position = "right")
+
+wu_plotF = ggdraw(p2)
+wu_plotF
+```
+
+#Bray-Curtis dissimilarity
+##Bray-Curtis dissimilarity ordination and preliminary plot
+```{r}
+beta_bray_farm <- ordinate(physeq, "PCoA", "bray") #RUN this only ONCE because it takes a lot of time
+beta_bray_plot = plot_ordination(physeq, beta_bray_farm, type="Farm", color="Farm", shape="Farm", title="PCoA Weighted Unifrac") + stat_ellipse(type = "t", linetype = 3) + stat_ellipse(type = "t") + theme_bw()+labs(colour = "Farm") #To add arrows https://neavemj.github.io/posts/coralMicrobiome
+beta_bray_plot
+```
+
+#Bray-Curtis dissimilarity statistics betweeen STEC prevalence groups
+```{r}
+## PERMANOVA
+library(vegan)
+bray_dist = phyloseq::distance(physeq, method="bray") #RUN this only once because it takes a lot of time
+adonis_bray = adonis(bray_dist ~ sample_data(physeq)$STEC_prev_group)
+adonis_bray
+
+## Significant PERMANOVA indicates that centroid (or spatial median) among groups is different and/or with-group dispersion among groups is different
+
+## PERMDISP
+bray_disp <-betadisper(wuinfrac_dist, sample_data(physeq)$STEC_prev_group, type=c("median"))
+anova(bray_disp)
+
+## If PERMANOVA and PERMDISP are both significant, you can use plotting to tell if PERMANOVA was significant based on centroid (or spatial median)
+plot(bray_disp)
+#?plot.betadisper
+
+## Would look better with higher replication for groups
+plot(bray_disp, label = F)
+
+## Plot with 1 standard deviation ellipses around the group medians
+## sample size issue here, but you get the idea
+plot(bray_disp, label = F, hull = F, ellipse = T)
+
+## Within-group dispersion that PERMDISP is testing
+boxplot(bray_disp, las = 2, cex.lab=1.5)
+?boxplot
+
+## pairwise p-values
+TukeyHSD(bray_disp)
+
+scores(bray_disp, 1:4, display = "centroids")
+
+```
+
+#Bray-Curtis dissimilarity plot between STEC prevalence groups
+```{r}
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.07, ", paste(italic('p')),"=0.001"))
+
+beta_scatter = as.data.frame(beta_bray_farm[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+pmain_brayF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "STEC_prev_group", shape = "STEC_pos", palette = c("#EE0000FF","#3B4992FF"),ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +labs(x = "PCoA 1 (18.8%) ", y = "PCoA 2 (7.2%)", colour = "STEC prevalence", fill = "STEC prevalence", shape = "STEC")  +annotate("text", x = -0.3, y = -0.23, label = label_perm, colour = "black")+ #+annotate("text", x = -0.3, y = -0.3, label = label_anosim, colour = "black") + rremove("legend")
+scale_shape_manual(values=c(20,3))
+pmain_brayF
+#pallete = c("#73D055FF","#56B4E9","#404788FF","#D55E00","#E69F00")
+xdens <- axis_canvas(pmain_brayF, axis = "x")+
+  geom_density(data = beta_meta, aes(x = Axis.1, fill = STEC_prev_group),
+              alpha = 0.7, size = 0.2)+
+   theme(legend.position = "none") +
+  #scale_fill_aaas()
+scale_fill_manual(values=c("#EE0000FF","#3B4992FF"))
+# scale_fill_manual(values =c("#73D055FF","#56B4E9","#404788FF","#D55E00","#E69F00"))
+# Marginal densities along y axis
+# Need to set coord_flip = TRUE, if you plan to use coord_flip()
+ydens <- axis_canvas(pmain_brayF, axis = "y", coord_flip = TRUE)+
+     theme(legend.position = "none") +
+  geom_density(data = beta_meta, aes(x = Axis.2, fill = STEC_prev_group),
+                alpha = 0.7, size = 0.2)+
+  coord_flip()+
+ #  scale_fill_aaas()
+scale_fill_manual(values=c("#EE0000FF","#3B4992FF"))
+# scale_fill_manual(values =c("#73D055FF","#56B4E9","#404788FF","#D55E00","#E69F00"))
+p1 <- insert_xaxis_grob(pmain_brayF, xdens, grid::unit(.2, "null"), position = "top")
+p2<- insert_yaxis_grob(p1, ydens, grid::unit(.2, "null"), position = "right")
+
+bray_plotF = ggdraw(p2)
+bray_plotF
+```
+
+##Arrange alpha- and beta-diversity plots as a single figure 
+```{r}
+beta_div = ggarrange(wu_plotF,bray_plotF,nrow = 2, ncol = 1, align="hv", labels = c("C","D")) 
+diversity = ggarrange(alpha_STEC_groups,beta_div,nrow = 1, ncol = 2, align="hv", widths = c(1,1.5)) 
+```
+
+##Export alpha-diversity plot as a PDF
+```{r}
+
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021")
+# mm to inch
+setWidth = 10
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='diversity_plots.pdf',width=setWidth,height=9,pointsize=setFontSize)
+diversity
+dev.off()
+```
+
+
+#Alpha diverstiy STEC shedders
+
+##stx+eae- shedders vs. controls
+
+###Chao1 plot STEC vs controls
+```{r}
+chao_STEC_comp = chao%>%
+  dplyr::filter(STEC_comp != "NA")
+
+chao_boxplot_stec = ggboxplot(chao_STEC_comp, x = "STEC_comp", y = "value", color = "STEC", palette = "lancet", fill = "STEC", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F,legend = "none") +labs(y = "Chao1", colour = "STEC", fill = "STEC") + scale_fill_lancet(alpha = 0.5) +
+  stat_compare_means(label.x.npc = c(.25),label.y = 1800)
+
+chao_boxplot_stec
+```
+
+###Shannon plot STEC vs controls
+```{r}
+shannon_STEC_comp = shannon%>%
+  dplyr::filter(STEC_comp != "NA")
+
+shannon_boxplot_stec = ggboxplot(shannon_STEC_comp, x = "STEC_comp", y = "value", color = "STEC", palette = "lancet", fill = "STEC", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F, legend = "none") +labs(y = "Shannon", colour = "STEC", fill = "STEC") + scale_fill_lancet(alpha = 0.5) +
+  stat_compare_means(label.x.npc = c(.25),label.y = 6.3)
+
+shannon_boxplot_stec
+```
+
+##stx+eae+ shedders vs. controls
+
+###Chao1 plot EHEC vs controls
+```{r}
+chao_STEC_EPEC_comp = chao%>%
+  dplyr::filter(STEC_EPEC_comp != "NA")
+
+chao_boxplot_epec = ggboxplot(chao_STEC_EPEC_comp, x = "STEC_EPEC_comp", y = "value", color = "STEC", palette = "jco", fill = "STEC", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F,legend = "none") +labs(y = "Chao1", colour = "STEC", fill = "STEC") + scale_fill_jco(alpha = 0.5) +
+  stat_compare_means(label.x.npc = c(.25),label.y = 1800)
+
+chao_boxplot_epec
+```
+
+###Shannon plot EHEC vs controls
+```{r}
+shannon_STEC_EPEC_comp = shannon%>%
+  dplyr::filter(STEC_EPEC_comp != "NA")
+
+shannon_boxplot_epec = ggboxplot(shannon_STEC_EPEC_comp, x = "STEC_EPEC_comp", y = "value", color = "STEC", palette = "jco", fill = "STEC", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F,legend = "none") +labs(y = "Shannon", colour = "STEC", fill = "STEC") + scale_fill_jco(alpha = 0.5) +
+  stat_compare_means(label.x.npc = c(.25),label.y = 6.4)
+
+shannon_boxplot_epec
+```
+
+```{r fig.height=3, fig.width=10}
+stec_boxplots <- ggarrange(shannon_boxplot_stec,chao_boxplot_stec,ncol = 2, nrow = 1, align = "hv", labels = c("A","B"))
+stec_boxplots
+stec_epec_boxplots <- ggarrange(shannon_boxplot_epec,chao_boxplot_epec,ncol = 2, nrow = 1, align = "hv", labels = c("C","D"))
+stec_epec_boxplots
+
+alpha_stec <-  ggarrange(stec_boxplots,stec_epec_boxplots,ncol = 2, nrow = 1, align = "hv")
+alpha_stec
+```
+
+
+#Weighted Unifrac stats between STEC shedders and controls
+```{r}
+beta_wu_STEC <- ordinate(physeq_STEC, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
+beta_wu_plot = plot_ordination(physeq_STEC, beta_wu_STEC, type="Farm", color="Farm", shape="Farm", title="PCoA Weighted Unifrac") + stat_ellipse(type = "t", linetype = 3) + stat_ellipse(type = "t") + theme_bw()+labs(colour = "Farm") #To add arrows https://neavemj.github.io/posts/coralMicrobiome
+beta_wu_plot
+```
+
+```{r}
+#WU stats
+## PERMANOVA
+library(vegan)
+physeq_STEC <- subset_samples(physeq, STEC_comp%in%c("Control","STEC+EPEC-"))
+
+wuinfrac_dist = phyloseq::distance(physeq_STEC, method="wunifrac") #RUN this only once because it takes a lot of time
+adonis_wunifrac = adonis(wuinfrac_dist ~ sample_data(physeq_STEC)$STEC_comp)
+adonis_wunifrac
+
+## Significant PERMANOVA indicates that centroid (or spatial median) among groups is different and/or with-group dispersion among groups is different
+
+## PERMDISP
+wuni_disp <-betadisper(wuinfrac_dist, sample_data(physeq_STEC)$STEC_comp, type=c("median"))
+anova(wuni_disp)
+
+## If PERMANOVA and PERMDISP are both significant, you can use plotting to tell if PERMANOVA was significant based on centroid (or spatial median)
+plot(wuni_disp)
+#?plot.betadisper
+
+## Would look better with higher replication for groups
+plot(wuni_disp, label = F)
+
+## Plot with 1 standard deviation ellipses around the group medians
+## sample size issue here, but you get the idea
+plot(wuni_disp, label = F, hull = F, ellipse = T)
+
+## Within-group dispersion that PERMDISP is testing
+boxplot(wuni_disp, las = 2, cex.lab=1.5)
+?boxplot
+
+## pairwise p-values
+TukeyHSD(wuni_disp)
+
+scores(wuni_disp, 1:4, display = "centroids")
+
+```
+
+```{r}
+#WU stats
+## PERMANOVA
+library(vegan)
+physeq_STEC_EPEC <- subset_samples(physeq, STEC_EPEC_comp%in%c("Control","STEC+EPEC+"))
+
+wuinfrac_dist = phyloseq::distance(physeq_STEC_EPEC, method="wunifrac") #RUN this only once because it takes a lot of time
+adonis_wunifrac = adonis(wuinfrac_dist ~ sample_data(physeq_STEC_EPEC)$STEC_EPEC_comp)
+adonis_wunifrac
+
+## Significant PERMANOVA indicates that centroid (or spatial median) among groups is different and/or with-group dispersion among groups is different
+
+## PERMDISP
+wuni_disp <-betadisper(wuinfrac_dist, sample_data(physeq_STEC_EPEC)$STEC_EPEC_comp, type=c("median"))
+anova(wuni_disp)
+
+## If PERMANOVA and PERMDISP are both significant, you can use plotting to tell if PERMANOVA was significant based on centroid (or spatial median)
+plot(wuni_disp)
+#?plot.betadisper
+
+## Would look better with higher replication for groups
+plot(wuni_disp, label = F)
+
+## Plot with 1 standard deviation ellipses around the group medians
+## sample size issue here, but you get the idea
+plot(wuni_disp, label = F, hull = F, ellipse = T)
+
+## Within-group dispersion that PERMDISP is testing
+boxplot(wuni_disp, las = 2, cex.lab=1.5)
+?boxplot
+
+## pairwise p-values
+TukeyHSD(wuni_disp)
+
+scores(wuni_disp, 1:4, display = "centroids")
+
+```
+
+
+#Weighted unifrac ordination and preliminary plot of STEC shedders and controls
+```{r}
+beta_wu_STEC <- ordinate(physeq_STEC, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
+beta_wu_plot = plot_ordination(physeq_STEC, beta_wu_STEC, type="Farm", color="Farm", shape="Farm", title="PCoA Weighted Unifrac") + stat_ellipse(type = "t", linetype = 3) + stat_ellipse(type = "t") + theme_bw()+labs(colour = "Farm") #To add arrows https://neavemj.github.io/posts/coralMicrobiome
+beta_wu_plot
+```
+
+#Weighted Unifrac plot between STEC shedders and controls
+```{r}
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.08, ", paste(italic('p')),"=0.001"))
+library(lemon)
+
+beta_scatter = as.data.frame(beta_wu_STEC[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+pmain_wuF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "STEC_comp",ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F, legend = "top") +labs(x = "PCoA 1 (27.3%) ", y = "PCoA 2 (6.9%)", colour = "", fill = "") +annotate("text", x = -0.05, y = 0.04, label = label_perm, colour = "black") +scale_shape_manual(values=c(20,3)) + scale_fill_lancet(alpha = 0.5) +scale_color_lancet() 
+
+pmain_wuF = reposition_legend(pmain_wuF,'top left')
+
+```
+
+```{r}
+beta_wu_STEC <- ordinate(physeq_STEC, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
+beta_wu_plot = plot_ordination(physeq_STEC, beta_wu_STEC, type="Farm", color="Farm", shape="Farm", title="PCoA Weighted Unifrac") + stat_ellipse(type = "t", linetype = 3) + stat_ellipse(type = "t") + theme_bw()+labs(colour = "Farm") #To add arrows https://neavemj.github.io/posts/coralMicrobiome
+beta_wu_plot
+```
+
+```{r}
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.08, ", paste(italic('p')),"=0.001"))
+library(lemon)
+
+beta_scatter = as.data.frame(beta_wu_STEC[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+pmain_wuF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "STEC_comp",ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F, legend = "top") +labs(x = "PCoA 1 (27.3%) ", y = "PCoA 2 (6.9%)", colour = "", fill = "") +annotate("text", x = -0.02, y = 0.04, label = label_perm, colour = "black") +scale_shape_manual(values=c(20,3)) + scale_fill_lancet(alpha = 0.5) +scale_color_lancet() 
+
+pmain_wuF = reposition_legend(pmain_wuF,'top left')
+
+```
+
+#Weighted unifrac beta diversity
+```{r}
+beta_wu_STEC_EPEC <- ordinate(physeq_STEC_EPEC, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
+beta_wu_plot = plot_ordination(physeq_STEC_EPEC, beta_wu_STEC_EPEC, type="Farm", color="Farm", shape="Farm", title="PCoA Weighted Unifrac") + stat_ellipse(type = "t", linetype = 3) + stat_ellipse(type = "t") + theme_bw()+labs(colour = "Farm") #To add arrows https://neavemj.github.io/posts/coralMicrobiome
+beta_wu_plot
+```
+```{r}
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.02, ", paste(italic('p')),"=0.001"))
+library(lemon)
+
+beta_scatter = as.data.frame(beta_wu_STEC_EPEC[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+pmain_wuF_epec = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "STEC_EPEC_comp",ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F, legend = "top") +labs(x = "PCoA 1 (20.4%) ", y = "PCoA 2 (7.5%)", colour = "", fill = "") +annotate("text", x = -0.05, y = 0.07, label = label_perm, colour = "black") +scale_shape_manual(values=c(20,3)) + scale_fill_jco(alpha = 0.5) +scale_color_jco() 
+
+pmain_wuF_epec = reposition_legend(pmain_wuF_epec,'top left')
+
+```
+
+```{r}
+beta_STEC_EPEC = ggarrange(pmain_wuF, pmain_wuF_epec, nrow = 1, ncol = 2, align="hv", labels = c("E","F"))
+beta_STEC_EPEC
+stec_PLOTS = ggarrange(alpha_stec,beta_STEC_EPEC,nrow = 2, ncol = 1, align="hv") 
+stec_PLOTS
+```
+
+```{r}
+
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/")
+# mm to inch
+setWidth = 12
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='2021_05_19_STECsamples_div.pdf',width=setWidth,height=6,pointsize=setFontSize)
+stec_PLOTS
+dev.off()
+
+```
+
+
+#Forage percentage beta-diversity comparisons 
+#Weighted-Unifrac stats Forage
+```{r}
+## PERMANOVA
+library(vegan)
+wuinfrac_dist = phyloseq::distance(physeq, method="wunifrac") #RUN this only once because it takes a lot of time
+adonis_wunifrac = adonis(wuinfrac_dist ~ sample_data(physeq)$Pforage)
+adonis_wunifrac
+
+## Significant PERMANOVA indicates that centroid (or spatial median) among groups is different and/or with-group dispersion among groups is different
+
+## PERMDISP
+wuni_disp <-betadisper(wuinfrac_dist, sample_data(physeq)$Pforage, type=c("median"))
+anova(wuni_disp)
+
+## If PERMANOVA and PERMDISP are both significant, you can use plotting to tell if PERMANOVA was significant based on centroid (or spatial median)
+plot(wuni_disp)
+#?plot.betadisper
+
+## Would look better with higher replication for groups
+plot(wuni_disp, label = F)
+
+## Plot with 1 standard deviation ellipses around the group medians
+## sample size issue here, but you get the idea
+plot(wuni_disp, label = F, hull = F, ellipse = T)
+
+## Within-group dispersion that PERMDISP is testing
+boxplot(wuni_disp, las = 2, cex.lab=1.5)
+?boxplot
+
+## pairwise p-values
+TukeyHSD(wuni_disp)
+
+scores(wuni_disp, 1:4, display = "centroids")
+
+```
+
+##Weighted-Unifrac plot Forage
+```{r}
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.13, ", paste(italic('p')),"=0.001"))
+
+beta_scatter = as.data.frame(beta_wu_farm[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+pmain_wuF_forage = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Pforage",ellipse = F, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +labs(x = "PCoA 1 (18.6%) ", y = "PCoA 2 (6.3%)", colour = "Forage %", fill = "Forage %") + scale_color_viridis(option="D") + annotate("text", x = -0.05, y = 0.18, label = label_perm, colour = "black")
+pmain_wuF_forage
+```
+
+##Bray-Curtis dissimilarity stats Forage
+```{r}
+## PERMANOVA
+library(vegan)
+bray_dist = phyloseq::distance(physeq, method="bray") #RUN this only once because it takes a lot of time
+adonis_bray = adonis(bray_dist ~ sample_data(physeq)$Pforage)
+adonis_bray
+
+## Significant PERMANOVA indicates that centroid (or spatial median) among groups is different and/or with-group dispersion among groups is different
+
+## PERMDISP
+wuni_disp <-betadisper(wuinfrac_dist, sample_data(physeq)$Pforage, type=c("median"))
+anova(wuni_disp)
+
+## If PERMANOVA and PERMDISP are both significant, you can use plotting to tell if PERMANOVA was significant based on centroid (or spatial median)
+plot(wuni_disp)
+#?plot.betadisper
+
+## Would look better with higher replication for groups
+plot(wuni_disp, label = F)
+
+## Plot with 1 standard deviation ellipses around the group medians
+## sample size issue here, but you get the idea
+plot(wuni_disp, label = F, hull = F, ellipse = T)
+
+## Within-group dispersion that PERMDISP is testing
+boxplot(wuni_disp, las = 2, cex.lab=1.5)
+?boxplot
+
+## pairwise p-values
+TukeyHSD(wuni_disp)
+
+scores(wuni_disp, 1:4, display = "centroids")
+```
+
+##Bray-Curtis dissimilarity plot Forage
+```{r}
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.13, ", paste(italic('p')),"=0.001"))
+
+beta_scatter = as.data.frame(beta_bray_farm[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+pmain_bray_forage = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Pforage",ellipse = F, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +labs(x = "PCoA 1 (18.8%) ", y = "PCoA 2 (7.2%)", colour = "Forage %", fill = "Forage %") + scale_color_viridis(option="D") + annotate("text",  x = -0.25, y = 0.3, label = label_perm, colour = "black")
+pmain_bray_forage
+```
+
+#Arrange beta-diversity plots of forage percentage in diet
+```{r fig.width=15, fig.height=7}
+forage_beta = ggarrange(pmain_bray_forage, pmain_wuF_forage, labels = c("A","B"), ncol = 2)
+forage_beta
+```
+
+#Export beta-diversity plots of forage percentage as PDF
+```{r}
+
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021")
+# mm to inch
+setWidth = 15
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='beta_div_forage.pdf',width=setWidth,height=4,pointsize=setFontSize)
+forage_beta
+dev.off()
+
+```

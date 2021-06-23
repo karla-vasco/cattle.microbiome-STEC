@@ -1,0 +1,288 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+#Libraries
+```{r}
+library("phyloseq")
+library("ggplot2")
+library("ape")
+library("gridExtra")
+library("ggpubr")
+library("ggsignif")
+library(forcats)
+library(vegan)
+library(viridis)
+library(cowplot)
+```
+
+#Importing files for microbiome analysis with phyloseq
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects")
+
+#read in otu table
+otu_table = read.csv("otu_table_97.csv",sep=",",row.names=1)
+otu_table=as.matrix(otu_table,rownames=TRUE)
+#read in taxonomy
+taxonomy = read.csv("taxonomy_97.csv",sep=",",row.names=1)
+taxonomy=as.matrix(taxonomy)
+#read in metadata
+metadata=read.table("metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+metadata
+phy_tree = read_tree("tree_97.nwk")
+```
+
+##Generating a phyloseq object 
+```{r}
+#import as phyloseq objects
+OTU = otu_table(otu_table,taxa_are_rows=TRUE)
+TAX = tax_table(taxonomy)
+META = sample_data(metadata)
+META$Phase=as.factor(META$Phase)
+META$STEC=as.factor(META$STEC)
+META$STEC=as.factor(META$STEC)
+META$STEC_prev_group <- factor(META$STEC_prev_group, levels = c("Low","High"))
+
+# Sanity checks for consistent OTU names
+taxa_names(TAX)
+taxa_names(OTU)
+taxa_names(phy_tree)
+
+# Same sample names
+sample_names(OTU)
+sample_names(META)
+
+#(tree was already imported as a phyloseq object)
+physeq=phyloseq(OTU,TAX,META,phy_tree)
+```
+
+#Filtering samples and taxa for further analyses
+```{r}
+physeq_two = subset_taxa(physeq, Order != "Chloroplast")
+physeq_three = subset_taxa(physeq_two, Family != "Mitochondria")
+physeq_hindgut <- subset_samples(physeq_three, Type%in%c("RAJ","FG"))
+```
+
+#HISTOGRAMS TAXA ABUNDANCE
+
+#Converting physeq to data-frame
+```{r}
+glom_fam <- tax_glom(physeq_hindgut, taxrank = 'Family')
+glom_fam_tra  = transform_sample_counts(glom_fam, function(x) x * 100 / sum(x) )
+glom_fam # should list # taxa as # phyla
+data_fam <- psmelt(glom_fam) # create dataframe from phyloseq object
+```
+
+#Converting family minorities to a single category (only keep the first 11 most abundant Families)
+```{r}
+data_fam$Family <- as.character(data_fam$Family)
+data_fam$Family[data_fam$Family != c("Ruminococcaceae", "Rikenellaceae","Prevotellaceae","Lachnospiraceae", "Bacteroidaceae", "Muribaculaceae","Christensenellaceae","Spirochaetaceae","Bacteroidales RF16 group","Bacteroidales.uncultured","Mollicutes RF39.uncultured")] <- "Minorities"
+data_fam$Family <- as.factor(data_fam$Family)
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects")
+write.csv(data_fam,file="family_abundance_r.csv")
+```
+
+#1. Import matrix table with proportions, convert to data frame and plot
+
+##1.1. Phylum hindgut by breed
+```{r}
+library(reshape)
+
+#### PHYLUM GUT BREED###
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/tables_plots/Taxa_abundance")
+Phylum_breed <- read.csv("Phylum_Breed.csv", header=T)
+Phylum_breed2 =melt(Phylum_breed,id=colnames(Phylum_breed)[1])
+
+
+# Stacked Percent
+pgb = Phylum_breed2 %>% 
+  mutate(Phylum = fct_relevel(Phylum           ,"Firmicutes","Bacteroidetes","Proteobacteria","Spirochaetes","Tenericutes","Minorities")) %>%
+  ggplot(aes(x=variable, y=value,fill=Phylum)) + 
+  geom_bar(stat="identity", position="fill") + 
+  scale_color_brewer(palette="Set3") + 
+  labs(x = "Breed", y = "Relative abundance") + 
+  theme_bw() +  scale_fill_brewer(palette="Paired") + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+##1.2. Phylum hindgut by farm
+```{r}
+library(reshape)
+
+#### PHYLUM GUT FARM###
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/tables_plots/Taxa_abundance")
+Phylum_farm <- read.csv("Phylum_farms.csv", header=T, check.names = F)
+Phylum_farm2 =melt(Phylum_farm,id=colnames(Phylum_farm)[1])
+
+# Stacked Percent
+pgf = Phylum_farm2 %>% 
+  mutate(Phylum = fct_relevel(Phylum           ,"Firmicutes","Bacteroidetes","Proteobacteria","Spirochaetes","Tenericutes","Minorities")) %>%
+  ggplot(aes(x=variable, y=value,fill=Phylum)) +
+  geom_bar(stat="identity", position="fill") +
+  labs(x = "Farm", y = "Relative abundance") + 
+  theme_bw() +  
+  scale_fill_brewer(palette="Set2") + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme(axis.text.x = element_text(colour = "black")) +
+  theme(legend.margin=margin(0,0,0,0),
+        legend.box.margin=margin(-5,-5,-5,-5))
+pgf
+```
+
+##1.2. Family hindgut by farm
+```{r}
+library(reshape)
+#### PHYLUM GUT FARM###
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/tables_plots/Taxa_abundance")
+taxa <- read.csv("Family_hindgut_farms.csv", header=T,check.names=F)
+taxa_df =melt(taxa,id=colnames(taxa)[1])
+# Stacked Percent
+hist_fam = taxa_df %>% 
+  mutate(Family = fct_relevel(Family,"Ruminococcaceae", "Rikenellaceae","Prevotellaceae","Lachnospiraceae", "Bacteroidaceae", "Muribaculaceae","Christensenellaceae","Spirochaetaceae","Bacteroidales RF16 group","Bacteroidales uncultured","Mollicutes RF39 uncultured", "Minorities")) %>%
+  ggplot(aes(x=variable, y=value,fill=Family)) + 
+  geom_bar(stat="identity", position="fill") + 
+  scale_color_brewer(palette="Set3") + 
+  theme(plot.subtitle = element_text(vjust = 1), plot.caption = element_text(vjust = 1)) +
+  labs(x = "Farm", y = "Relative abundance") + 
+  theme_bw() +  
+  scale_fill_brewer(palette="Paired") + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text.x = element_text(colour = "black")) +
+  theme(legend.margin=margin(0,0,0,0),
+        legend.box.margin=margin(-5,-5,-5,-5))
+hist_fam
+```
+
+#Phylum breed and farm gut
+```{r}
+Taxa_gut = ggarrange(pgf,hist_fam, nrow = 1, ncol = 2, align="h",labels = c("A","B"))
+Taxa_gut
+```
+
+#3. Histogram with x-axis corresponding to samples (instead of farms)
+
+#Importing metadata to merge with a customized table 
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects")
+
+#read in metadata
+meta=read.table("metadata_up.csv", sep = ",", header = TRUE, na.strings = "") 
+meta
+```
+
+#Importing matrix with the values, merging with metadata and customizing order for the plot
+```{r}
+library(reshape)
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/tables_plots/Taxa_abundance")
+
+rel_abd_mx <- read.csv("Sample_family.csv", header=T)
+
+rel_abd_df =melt(rel_abd_mx,id=colnames(rel_abd_mx)[1]) #Converting matrix to df
+
+rel_abd_df = dplyr::rename(rel_abd_df, Family = variable) #Renaming variable by Family
+
+taxa_meta <- merge(rel_abd_df,meta,by=c("ID")) #Merging df with medata
+
+taxa_meta$Farm_STEC = NA #Create new column
+
+taxa_meta$Farm = factor(taxa_meta$Farm, levels=c('1B','4D','2D','9D','8B')) #New order for the facet histogram
+
+#taxa_meta$Farm_STEC = paste(taxa_meta$Farm,taxa_meta$STEC_pos) #New column with concatenated values
+
+#taxa_meta$Farm_STEC = factor(taxa_meta$Farm_STEC, levels=c('1B STEC','1B Control', '1B ND','4D STEC','4D Control', '4D ND','2D STEC','2D Control', '2D ND','9D STEC','9D Control', '9D ND','8B STEC','8B Control', '8B ND')) #New order for the facet histogram. I did not use it because there are too many categories.
+```
+
+#I created a new table in Excel with the customized sample order. I ordered them by farm and then by proportion of Ruminococcaceae in descending order.
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/tables_plots/Taxa_abundance")
+
+sample_order <- read.csv("sample_order_des.csv", header=T)
+
+#sample_order <- read.csv("sample_ru_order.csv", header=T)
+
+as.data.frame(sample_order)
+
+taxa_meta$ID = factor(taxa_meta$ID, levels = sample_order$ID) #Customized order of the samples
+```
+#SAMPLE HISTOGRAM
+```{r}
+# New facet label names for supp variable
+supp.labs <- c("Crossbreed 1B", "Holstein 4D", "Holstein 2D", "Holstein 9D", "Angus 8B")
+names(supp.labs) <- c("1B", "4D","2D","9D","8B")
+
+# Stacked Percent
+hist_fam_sample = taxa_meta %>% 
+  mutate(Family = fct_relevel(Family,"Ruminococcaceae", "Rikenellaceae","Prevotellaceae","Lachnospiraceae", "Bacteroidaceae", "Muribaculaceae","Christensenellaceae","Spirochaetaceae","Bacteroidales.RF16.group","Bacteroidales.uncultured","Mollicutes.RF39.uncultured", "Minorities")) %>%
+  ggplot(aes(x=ID, y=value,fill=Family)) + 
+  geom_bar(stat="identity", position="fill") +
+  facet_wrap(vars(Farm),scales = "free_x",nrow=1,labeller = labeller(Farm = supp.labs)) +
+  scale_color_brewer(palette="Set3") + 
+  theme(plot.subtitle = element_text(vjust = 1), plot.caption = element_text(vjust = 1)) +
+  labs(x = "Farm", y = "Relative abundance", fill = "Family") + 
+  theme_bw() +  
+  scale_fill_brewer(palette="Paired") + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme(axis.text.x = element_blank(), axis.ticks = element_blank(), legend.position = "none", axis.title.x = element_blank())
+hist_fam_sample
+```
+
+#Forage percentage histogram
+```{r}
+forage_hist = taxa_meta %>%
+ # dplyr::filter(Family == "Ruminococcaceae") %>%
+  ggplot(aes(x=ID, y=Pforage)) +
+  geom_bar(stat="identity", position="dodge", fill = '#BBCC33') +
+  facet_wrap(vars(Farm),scales = "free_x",nrow=1) +
+ # geom_jitter(alpha=0.5) +
+ # geom_smooth() +
+  labs(y = "Forage %") + 
+  theme_bw() +  
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none")  +
+ theme(axis.text.x = element_blank(), axis.ticks = element_blank(),axis.title.x=element_blank())
+forage_hist
+```
+
+#STEC percentage histogram
+```{r}
+STEC_hist = taxa_meta %>%
+ # dplyr::filter(Family == "Ruminococcaceae") %>%
+  ggplot(aes(x=ID, y=STEC)) +
+  geom_bar(stat="identity", position="dodge", fill = 'red') +
+  facet_wrap(vars(Farm),scales = "free_x",nrow=1) +
+ # geom_jitter(alpha=0.5) +
+ # geom_smooth() +
+  labs(y = "STEC") + 
+  theme_bw() +  
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none")  +
+ theme(axis.text.x = element_blank(), axis.ticks = element_blank(),axis.title.x=element_blank(),axis.text = element_blank())
+STEC_hist
+```
+
+```{r}
+hist_forage_sam = ggarrange(hist_fam_sample, forage_hist, STEC_hist, nrow = 3, ncol = 1, align="hv",labels = c("C","D","E"), heights = c(1.5,.5,.5))
+hist_forage_sam
+```
+#Arranging histograms as a final figure
+```{r}
+Taxa_gut_sam = ggarrange(Taxa_gut, hist_forage_sam, nrow = 2, ncol = 1, align="hv", heights = c(1,1.5))
+Taxa_gut_sam
+```
+#SAVING PLOTS AS A PDF 
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2020/june")
+
+# mm to inch
+setWidth = 183*0.039370
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='histogram_farm_STEC.pdf',width=setWidth,height=9,pointsize=setFontSize)
+Taxa_gut_sam
+dev.off()
+
+```

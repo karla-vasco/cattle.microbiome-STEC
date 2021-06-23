@@ -1,0 +1,141 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#MaASlin2
+```{r}
+#INSTALLATION https://github.com/biobakery/Maaslin2
+
+if(!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("Maaslin2")
+```
+
+
+```{r}
+my_taxonomy <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021_Picrust/abundance_table/ECabundance_table.txt", sep = "\t", header = TRUE, row.names=1, na.strings = "")
+
+my_taxonomy <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021_Picrust/abundance_table/KOabundance_table.txt", sep = "\t", header = TRUE, row.names=1, na.strings = "")
+
+my_metadata <- read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/MasAsLin2_files/metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "")
+```
+
+```{r}
+library(Maaslin2)
+fit_data <- Maaslin2(
+    my_taxonomy, my_metadata, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021_Picrust/Maaslin2_picrust/EC-STEC_shedders', transform = "LOG",
+    fixed_effects = c('STEC_prev_group',"STEC_pos"),
+    random_effects = c('Study_ID','Farm'),
+    normalization = 'TSS',
+    standardize = TRUE) 
+```
+
+```{r}
+library(Maaslin2)
+fit_data <- Maaslin2(
+    my_taxonomy, my_metadata, '/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021_Picrust/Maaslin2_picrust/EC-Farm_STEC_group', transform = "LOG",
+    fixed_effects = c('STEC_prev_group',"Farm"),
+    random_effects = c('Study_ID'),
+    normalization = 'TSS',
+    standardize = TRUE) 
+```
+
+#LEFSE file
+```{r}
+library(metagMisc)
+
+KO_abundance <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/Picrust2/KOabundance_table.txt", sep = "\t", header = TRUE,row.names=1, na.strings = "")
+
+KO_abundance_df = as.data.frame(t(KO_abundance)) 
+KO_abundance_df <- KO_abundance_df[-1, ]
+KO_abundance_df[] <- lapply(KO_abundance_df, function(x) type.convert(as.character(x)))
+
+KO_metadata <- merge(KO_abundance_df,my_metadata,by="row.names", all=F)
+
+library(tidyverse)
+lefse_farm = KO_metadata %>% dplyr::filter(Type%in%c("FG", "RAJ")) %>% dplyr::select(1,STEC,Farm,2:488) 
+
+
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/Picrust2")
+write.table(lefse_farm, file = "lefse_stec_KO.txt", sep = '\t', col.names = TRUE, row.names = F)
+
+
+#Modify in Excel Row.names for ID (optional)
+#Then submit the LEFSE analysis here http://huttenhower.org/galaxy/
+```
+
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/Picrust2")
+LDA_table <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/Picrust2/LDA_prevalence_group.csv", sep = ",", header = TRUE, na.strings = "")
+LDA_table$Prevalence <- factor(LDA_table$Prevalence, levels = c("Low","High"))
+
+
+library(ggsci)
+# Stacked Percent
+dif_taxa = LDA_table %>% 
+  ggplot(aes(x=LDA.score, y=reorder(Pathway, +LDA.score),fill=Prevalence)) + 
+  geom_bar(stat="identity", col = "black") + 
+  geom_text(aes(x = ifelse(LDA.score < 0, 0.1, -0.1), label = Pathway, hjust = ifelse(LDA.score < 0, 0, 1))) +  # label text based on value
+  labs(x = "LDA score (log10)", y = "Metabolic pathway", fill = "STEC prevalence") + 
+  theme_bw() + 
+ theme(panel.grid.minor = element_blank(),  panel.grid.major.y=element_blank()) + 
+  theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_blank(), legend.position = "top") + 
+  scale_fill_lancet() #+
+ # geom_vline(aes(xintercept = c(0,-1,-2,-3,1,2,3)), linetype = "dashed")
+dif_taxa
+```
+```{r}
+
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021_Picrust")
+# mm to inch
+setWidth = 11
+
+# font size in pt
+setFontSize = 6
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='LDA_pathways_prevalence.pdf',width=setWidth,height=9,pointsize=setFontSize)
+dif_taxa
+dev.off()
+```
+```{r}
+LDA_table <-  read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021_Picrust/LDA_STEC_pathways.csv", sep = ",", header = TRUE, na.strings = "")
+LDA_table$Group <- factor(LDA_table$Group, levels = c("non-shedder","STEC shedder"))
+
+
+library(ggsci)
+# Stacked Percent
+dif_taxa = LDA_table %>% 
+  ggplot(aes(x=LDA, y=reorder(Pathway, +LDA),fill=Group)) + 
+  geom_bar(stat="identity", col = "black") + 
+  geom_text(aes(x = ifelse(LDA < 0, 0.1, -0.1), label = Pathway, hjust = ifelse(LDA < 0, 0, 1))) +  # label text based on value
+  labs(x = "LDA score (log10)", y = "Metabolic pathway", fill = "STEC shedding status") + 
+  theme_bw() + 
+ theme(panel.grid.minor = element_blank(),  panel.grid.major.y=element_blank()) + 
+  theme(axis.text.x = element_text(colour = "black"), axis.text.y = element_blank(), legend.position = "top") + 
+  scale_fill_lancet() #+
+ # geom_vline(aes(xintercept = c(0,-1,-2,-3,1,2,3)), linetype = "dashed")
+dif_taxa
+```
+
+```{r}
+
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021_Picrust")
+# mm to inch
+setWidth = 7
+
+# font size in pt
+setFontSize = 6
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='LDA_pathways_STECshedders.pdf',width=setWidth,height=3,pointsize=setFontSize)
+dif_taxa
+dev.off()
+```
