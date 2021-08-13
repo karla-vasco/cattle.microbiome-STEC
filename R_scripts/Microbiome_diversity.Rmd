@@ -65,6 +65,13 @@ physeq_STEC <- subset_samples(physeq_hindgut, STEC%in%c("1","0"))
 physeq = physeq_STEC
 ```
 
+#Rarefraction
+```{r}
+physeq <- rarefy_even_depth(physeq, sample.size = min(sample_sums(physeq)),
+  rngseed = FALSE, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+```
+
+
 #Alpha-diversity calculation  (Shannon and Chao1 indices) 
 ```{r fig.width=10, fig.height=40}
 alpha_diversity <- estimate_richness(physeq, measures = c("Shannon", "Chao1"))
@@ -89,36 +96,26 @@ my_comparisons <- list(c("1B", "2D"), c("2D", "4D"), c("4D", "9D"), c("9D","8B")
 sha_farm <- shannon %>% #shannon_box, chao1_box
   mutate(Farm = fct_relevel(Farm, "1B","2D","4D","9D","8B")) %>% #Optional if you need a specific x_axis order 
   ggplot(aes(x = Farm, y = value, fill = STEC_prev_group)) +
- # geom_violin(width=1.4) +
   geom_boxplot(outlier.shape = NA) +
-  #geom_boxplot(outlier.shape = NA) +
- # geom_point(alpha=0.5, position = position_jitterdodge()) +
   geom_jitter(color="black", size=0.4, alpha=0.5) +
   labs(y="Shannon", x="Farm") +
-    annotate("text", x = 3, y = 7.8, label = "Kruskal-Wallis, p < 2.2e-16", colour = "black") +
-  ylim(3,8) +
+    annotate("text", x = 3, y = 7, label = "Kruskal-Wallis, p < 2.2e-16", colour = "black") +
+  ylim(3,7.2) +
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
   theme_classic() + 
-  theme(legend.position = "none",axis.title.x=element_blank()) + stat_compare_means(comparisons = my_comparisons, label.y = c(6.1,6.3,6.5,6.65,6.8,7.2), symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = F) +
-  #stat_compare_means(label.y = 7.7, label.x.npc = .3) +
+  theme(legend.position = "none",axis.title.x=element_blank()) + stat_compare_means(comparisons = my_comparisons, label.y = c(5.3,5.5,5.7,5.9,6.1,6.4), symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = F) +
    scale_fill_aaas()
-#  scale_fill_manual(values =c("#73D055FF","#404788FF","#56B4E9","#E69F00","#D55E00")) + scale_shape_manual(values = c(20,3,20))
 
 cha_farm <- chao %>% #shannon_box, chao1_box
  mutate(Farm = fct_relevel(Farm, "1B","2D","4D","9D","8B")) %>% #Optional if you need a specific x_axis order 
   ggplot(aes(x = Farm, y = value, fill = STEC_prev_group)) +
- # geom_violin(width=1.4) +
   geom_boxplot(outlier.shape = NA) +
-#  geom_point(alpha=0.5, position = position_jitterdodge()) +
   geom_jitter(color="black", size=0.4, alpha=0.5) +
    labs(y="Chao1", x="Farm") + 
-    annotate("text", x = 3, y = 2400, label = "Kruskal-Wallis, p < 2.2e-16", colour = "black") +
-  ylim(100,2500) +theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+    annotate("text", x = 3, y = 1400, label = "Kruskal-Wallis, p < 2.2e-16", colour = "black") +
+  ylim(100,1450) +theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
   theme_classic() + 
-  theme(legend.position = "none",axis.title.x=element_blank()) + stat_compare_means(comparisons = my_comparisons, label.y = c(1500,1600,1700,1800,1900,2100), symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = FALSE) +
-#  stat_compare_means(label.y = 2400, label.x.npc = .3) +
- scale_fill_aaas()
-  # scale_fill_manual(values =c("#73D055FF","#404788FF","#56B4E9","#E69F00","#D55E00")) +scale_shape_manual(values=c(20,3,20))
+  theme(legend.position = "none",axis.title.x=element_blank()) + stat_compare_means(comparisons = my_comparisons, label.y = c(700,800,900,1000,1100,1200), symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = FALSE) + scale_fill_aaas()
 sha_farm
 cha_farm
 ```
@@ -142,7 +139,7 @@ setFontSize = 7
 setLwd <- 0.25/0.75    
 
 
-pdf(file='alpha_div_farm.pdf',width=setWidth,height=4.5,pointsize=setFontSize)
+pdf(file='alpha_div_farm_rarefied.pdf',width=setWidth,height=4.5,pointsize=setFontSize)
 alphaF
 dev.off()
 
@@ -160,14 +157,15 @@ library(scales)
 ##Shannon index plot
 ```{r}
 shannon_boxplot_prev = ggboxplot(shannon, x = "STEC_prev_group", y = "value", color = "STEC_prev_group", palette = "lancet", fill = "STEC_prev_group", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F, legend = "none") +labs(y = "Shannon", colour = "STEC prevalence", fill = "STEC prevalence") + scale_fill_lancet(alpha = 0.5) +
-  stat_compare_means(label.x.npc = c(.25),label.y = 6.3)
+  stat_compare_means(label.x.npc = c(.25),label.y = 5.5)
 
 shannon_boxplot_prev
 ```
+
 ##Chao1 index plot
 ```{r}
 chao1_boxplot_prev = ggboxplot(chao, x = "STEC_prev_group", y = "value", color = "STEC_prev_group", palette = "lancet", fill = "STEC_prev_group", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F, legend = "none") +labs(y = "Chao1", colour = "STEC prevalence", fill = "STEC prevalence") + scale_fill_lancet(alpha = 0.5) +
-  stat_compare_means(label.x.npc = c(.25),label.y = 6.3)
+  stat_compare_means(label.x.npc = c(.25),label.y = 1000)
 
 chao1_boxplot_prev
 ```
@@ -223,12 +221,12 @@ scores(wuni_disp, 1:4, display = "centroids")
 
 ##Weighted Unifrac plot among farms
 ```{r}
-label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.23, ", paste(italic('p')),"=0.001"))
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.17, ", paste(italic('p')),"=0.001"))
 
 beta_scatter = as.data.frame(beta_wu_farm[["vectors"]])
 beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
 beta_meta$Phase = as.factor(beta_meta$Phase)
-pmain_wuF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Farm", shape = "STEC_pos", palette =   c("#73D055FF","#56B4E9","#404788FF","#D55E00","#E69F00"),ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +labs(x = "PCoA 1 (18.6%) ", y = "PCoA 2 (6.3%)", colour = "STEC_prev_group", fill = "Farm") + rremove("legend") +annotate("text", x = -0.08, y = -0.08, label = label_perm, colour = "black") +scale_shape_manual(values=c(20,3))
+pmain_wuF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Farm", shape = "STEC_pos", palette =   c("#73D055FF","#56B4E9","#404788FF","#D55E00","#E69F00"),ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +labs(x = "PCoA 1 (16.8%) ", y = "PCoA 2 (6.1%)", colour = "Farm", fill = "Farm", shape="") + annotate("text", x = 0, y = 0.08, label = label_perm, colour = "black") +scale_shape_manual(values=c(20,3)) 
 pmain_wuF
 
 xdens <- axis_canvas(pmain_wuF, axis = "x")+
@@ -297,12 +295,12 @@ scores(bray_disp, 1:4, display = "centroids")
 
 #Bray-Curtis dissimilarity plot between STEC prevalence groups
 ```{r}
-label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.07, ", paste(italic('p')),"=0.001"))
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.06, ", paste(italic('p')),"=0.001"))
 
 beta_scatter = as.data.frame(beta_bray_farm[["vectors"]])
 beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
 beta_meta$Phase = as.factor(beta_meta$Phase)
-pmain_brayF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "STEC_prev_group", shape = "STEC_pos", palette = c("#EE0000FF","#3B4992FF"),ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +labs(x = "PCoA 1 (18.8%) ", y = "PCoA 2 (7.2%)", colour = "STEC prevalence", fill = "STEC prevalence", shape = "STEC")  +annotate("text", x = -0.3, y = -0.23, label = label_perm, colour = "black")+ #+annotate("text", x = -0.3, y = -0.3, label = label_anosim, colour = "black") + rremove("legend")
+pmain_brayF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "STEC_prev_group", shape = "STEC_pos", palette = c("#EE0000FF","#3B4992FF"),ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +labs(x = "PCoA 1 (17.3%) ", y = "PCoA 2 (4.3%)", colour = "STEC prevalence", fill = "STEC prevalence", shape = "STEC")  +annotate("text", x = 0, y = -0.23, label = label_perm, colour = "black")+ #+annotate("text", x = -0.3, y = -0.3, label = label_anosim, colour = "black") + rremove("legend")
 scale_shape_manual(values=c(20,3))
 pmain_brayF
 #pallete = c("#73D055FF","#56B4E9","#404788FF","#D55E00","#E69F00")
@@ -333,7 +331,7 @@ bray_plotF
 ##Arrange alpha- and beta-diversity plots as a single figure 
 ```{r}
 beta_div = ggarrange(wu_plotF,bray_plotF,nrow = 2, ncol = 1, align="hv", labels = c("C","D")) 
-diversity = ggarrange(alpha_STEC_groups,beta_div,nrow = 1, ncol = 2, align="hv", widths = c(1,1.5)) 
+diversity = ggarrange(alpha_STEC_groups,beta_div,nrow = 1, ncol = 2, align="hv", widths = c(1,1.7)) 
 ```
 
 ##Export alpha-diversity plot as a PDF
@@ -350,7 +348,7 @@ setFontSize = 7
 setLwd <- 0.25/0.75    
 
 
-pdf(file='diversity_plots.pdf',width=setWidth,height=9,pointsize=setFontSize)
+pdf(file='diversity_plots_rarefraction.pdf',width=setWidth,height=9,pointsize=setFontSize)
 diversity
 dev.off()
 ```
@@ -366,7 +364,7 @@ chao_STEC_comp = chao%>%
   dplyr::filter(STEC_comp != "NA")
 
 chao_boxplot_stec = ggboxplot(chao_STEC_comp, x = "STEC_comp", y = "value", color = "STEC", palette = "lancet", fill = "STEC", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F,legend = "none") +labs(y = "Chao1", colour = "STEC", fill = "STEC") + scale_fill_lancet(alpha = 0.5) +
-  stat_compare_means(label.x.npc = c(.25),label.y = 1800)
+  stat_compare_means(label.x.npc = c(.25),label.y = 900)
 
 chao_boxplot_stec
 ```
@@ -377,7 +375,7 @@ shannon_STEC_comp = shannon%>%
   dplyr::filter(STEC_comp != "NA")
 
 shannon_boxplot_stec = ggboxplot(shannon_STEC_comp, x = "STEC_comp", y = "value", color = "STEC", palette = "lancet", fill = "STEC", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F, legend = "none") +labs(y = "Shannon", colour = "STEC", fill = "STEC") + scale_fill_lancet(alpha = 0.5) +
-  stat_compare_means(label.x.npc = c(.25),label.y = 6.3)
+  stat_compare_means(label.x.npc = c(.25),label.y = 5.8)
 
 shannon_boxplot_stec
 ```
@@ -390,7 +388,7 @@ chao_STEC_EPEC_comp = chao%>%
   dplyr::filter(STEC_EPEC_comp != "NA")
 
 chao_boxplot_epec = ggboxplot(chao_STEC_EPEC_comp, x = "STEC_EPEC_comp", y = "value", color = "STEC", palette = "jco", fill = "STEC", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F,legend = "none") +labs(y = "Chao1", colour = "STEC", fill = "STEC") + scale_fill_jco(alpha = 0.5) +
-  stat_compare_means(label.x.npc = c(.25),label.y = 1800)
+  stat_compare_means(label.x.npc = c(.25),label.y = 900)
 
 chao_boxplot_epec
 ```
@@ -401,7 +399,7 @@ shannon_STEC_EPEC_comp = shannon%>%
   dplyr::filter(STEC_EPEC_comp != "NA")
 
 shannon_boxplot_epec = ggboxplot(shannon_STEC_EPEC_comp, x = "STEC_EPEC_comp", y = "value", color = "STEC", palette = "jco", fill = "STEC", add = c("jitter"), notch = F, outlier.shape = NA, xlab = F,legend = "none") +labs(y = "Shannon", colour = "STEC", fill = "STEC") + scale_fill_jco(alpha = 0.5) +
-  stat_compare_means(label.x.npc = c(.25),label.y = 6.4)
+  stat_compare_means(label.x.npc = c(.25),label.y = 5.5)
 
 shannon_boxplot_epec
 ```
@@ -461,6 +459,27 @@ TukeyHSD(wuni_disp)
 scores(wuni_disp, 1:4, display = "centroids")
 
 ```
+#Weighted unifrac ordination and preliminary plot of STEC shedders and controls
+```{r}
+beta_wu_STEC <- ordinate(physeq_STEC, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
+beta_wu_plot = plot_ordination(physeq_STEC, beta_wu_STEC, type="Farm", color="Farm", shape="Farm", title="PCoA Weighted Unifrac") + stat_ellipse(type = "t", linetype = 3) + stat_ellipse(type = "t") + theme_bw()+labs(colour = "Farm") #To add arrows https://neavemj.github.io/posts/coralMicrobiome
+beta_wu_plot
+```
+
+#Weighted Unifrac plot between STEC shedders and controls
+```{r}
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.06, ", paste(italic('p')),"=0.001"))
+library(lemon)
+
+beta_scatter = as.data.frame(beta_wu_STEC[["vectors"]])
+beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
+beta_meta$Phase = as.factor(beta_meta$Phase)
+pmain_wuF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "STEC_comp",ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F, legend = "top") +labs(x = "PCoA 1 (23.6%) ", y = "PCoA 2 (8.1%)", colour = "", fill = "") +annotate("text", x = 0.02, y = 0.06, label = label_perm, colour = "black") +scale_shape_manual(values=c(20,3)) + scale_fill_lancet(alpha = 0.5) +scale_color_lancet() 
+
+pmain_wuF = reposition_legend(pmain_wuF,'top left')
+
+```
+
 
 ```{r}
 #WU stats
@@ -500,61 +519,20 @@ scores(wuni_disp, 1:4, display = "centroids")
 
 ```
 
-
-#Weighted unifrac ordination and preliminary plot of STEC shedders and controls
-```{r}
-beta_wu_STEC <- ordinate(physeq_STEC, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
-beta_wu_plot = plot_ordination(physeq_STEC, beta_wu_STEC, type="Farm", color="Farm", shape="Farm", title="PCoA Weighted Unifrac") + stat_ellipse(type = "t", linetype = 3) + stat_ellipse(type = "t") + theme_bw()+labs(colour = "Farm") #To add arrows https://neavemj.github.io/posts/coralMicrobiome
-beta_wu_plot
-```
-
-#Weighted Unifrac plot between STEC shedders and controls
-```{r}
-label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.08, ", paste(italic('p')),"=0.001"))
-library(lemon)
-
-beta_scatter = as.data.frame(beta_wu_STEC[["vectors"]])
-beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
-beta_meta$Phase = as.factor(beta_meta$Phase)
-pmain_wuF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "STEC_comp",ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F, legend = "top") +labs(x = "PCoA 1 (27.3%) ", y = "PCoA 2 (6.9%)", colour = "", fill = "") +annotate("text", x = -0.05, y = 0.04, label = label_perm, colour = "black") +scale_shape_manual(values=c(20,3)) + scale_fill_lancet(alpha = 0.5) +scale_color_lancet() 
-
-pmain_wuF = reposition_legend(pmain_wuF,'top left')
-
-```
-
-```{r}
-beta_wu_STEC <- ordinate(physeq_STEC, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
-beta_wu_plot = plot_ordination(physeq_STEC, beta_wu_STEC, type="Farm", color="Farm", shape="Farm", title="PCoA Weighted Unifrac") + stat_ellipse(type = "t", linetype = 3) + stat_ellipse(type = "t") + theme_bw()+labs(colour = "Farm") #To add arrows https://neavemj.github.io/posts/coralMicrobiome
-beta_wu_plot
-```
-
-```{r}
-label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.08, ", paste(italic('p')),"=0.001"))
-library(lemon)
-
-beta_scatter = as.data.frame(beta_wu_STEC[["vectors"]])
-beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
-beta_meta$Phase = as.factor(beta_meta$Phase)
-pmain_wuF = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "STEC_comp",ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F, legend = "top") +labs(x = "PCoA 1 (27.3%) ", y = "PCoA 2 (6.9%)", colour = "", fill = "") +annotate("text", x = -0.02, y = 0.04, label = label_perm, colour = "black") +scale_shape_manual(values=c(20,3)) + scale_fill_lancet(alpha = 0.5) +scale_color_lancet() 
-
-pmain_wuF = reposition_legend(pmain_wuF,'top left')
-
-```
-
-#Weighted unifrac beta diversity
 ```{r}
 beta_wu_STEC_EPEC <- ordinate(physeq_STEC_EPEC, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
-beta_wu_plot = plot_ordination(physeq_STEC_EPEC, beta_wu_STEC_EPEC, type="Farm", color="Farm", shape="Farm", title="PCoA Weighted Unifrac") + stat_ellipse(type = "t", linetype = 3) + stat_ellipse(type = "t") + theme_bw()+labs(colour = "Farm") #To add arrows https://neavemj.github.io/posts/coralMicrobiome
+beta_wu_plot = plot_ordination(physeq_STEC, beta_wu_STEC, type="Farm", color="Farm", shape="Farm", title="PCoA Weighted Unifrac") + stat_ellipse(type = "t", linetype = 3) + stat_ellipse(type = "t") + theme_bw()+labs(colour = "Farm") #To add arrows https://neavemj.github.io/posts/coralMicrobiome
 beta_wu_plot
 ```
+
 ```{r}
-label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.02, ", paste(italic('p')),"=0.001"))
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.014, ", paste(italic('p')),"=0.001"))
 library(lemon)
 
 beta_scatter = as.data.frame(beta_wu_STEC_EPEC[["vectors"]])
 beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
 beta_meta$Phase = as.factor(beta_meta$Phase)
-pmain_wuF_epec = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "STEC_EPEC_comp",ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F, legend = "top") +labs(x = "PCoA 1 (20.4%) ", y = "PCoA 2 (7.5%)", colour = "", fill = "") +annotate("text", x = -0.05, y = 0.07, label = label_perm, colour = "black") +scale_shape_manual(values=c(20,3)) + scale_fill_jco(alpha = 0.5) +scale_color_jco() 
+pmain_wuF_epec = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "STEC_EPEC_comp",ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F, legend = "top") +labs(x = "PCoA 1 (19.4%) ", y = "PCoA 2 (7.2%)", colour = "", fill = "") +annotate("text", x = -0.02, y = -0.07, label = label_perm, colour = "black") +scale_shape_manual(values=c(20,3)) + scale_fill_jco(alpha = 0.5) +scale_color_jco() 
 
 pmain_wuF_epec = reposition_legend(pmain_wuF_epec,'top left')
 
@@ -569,7 +547,7 @@ stec_PLOTS
 
 ```{r}
 
-setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/")
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021")
 # mm to inch
 setWidth = 12
 
@@ -580,12 +558,18 @@ setFontSize = 7
 setLwd <- 0.25/0.75    
 
 
-pdf(file='2021_05_19_STECsamples_div.pdf',width=setWidth,height=6,pointsize=setFontSize)
+pdf(file='2021_05_19_STECsamples_div_rarefied.pdf',width=setWidth,height=6,pointsize=setFontSize)
 stec_PLOTS
 dev.off()
 
 ```
 
+#Rarefraction of hindgut samples for further analyses
+```{r}
+physeq = physeq_STEC
+physeq <- rarefy_even_depth(physeq, sample.size = min(sample_sums(physeq)),
+  rngseed = FALSE, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+```
 
 #Forage percentage beta-diversity comparisons 
 #Weighted-Unifrac stats Forage
@@ -631,7 +615,7 @@ label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.13, ", paste(italic('p'))
 beta_scatter = as.data.frame(beta_wu_farm[["vectors"]])
 beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
 beta_meta$Phase = as.factor(beta_meta$Phase)
-pmain_wuF_forage = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Pforage",ellipse = F, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +labs(x = "PCoA 1 (18.6%) ", y = "PCoA 2 (6.3%)", colour = "Forage %", fill = "Forage %") + scale_color_viridis(option="D") + annotate("text", x = -0.05, y = 0.18, label = label_perm, colour = "black")
+pmain_wuF_forage = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Pforage",ellipse = F, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +labs(x = "PCoA 1 (18.6%) ", y = "PCoA 2 (6.3%)", colour = "Forage %", fill = "Forage %") + scale_color_viridis(option="D") + annotate("text", x = 0, y = 0.07, label = label_perm, colour = "black")
 pmain_wuF_forage
 ```
 
@@ -672,7 +656,7 @@ scores(wuni_disp, 1:4, display = "centroids")
 
 ##Bray-Curtis dissimilarity plot Forage
 ```{r}
-label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.13, ", paste(italic('p')),"=0.001"))
+label_perm <- expression(paste("PERMANOVA, ",R^2 ,"= 0.18, ", paste(italic('p')),"=0.001"))
 
 beta_scatter = as.data.frame(beta_bray_farm[["vectors"]])
 beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
@@ -701,8 +685,10 @@ setFontSize = 7
 setLwd <- 0.25/0.75    
 
 
-pdf(file='beta_div_forage.pdf',width=setWidth,height=4,pointsize=setFontSize)
+pdf(file='beta_div_forage_rarefied.pdf',width=setWidth,height=4,pointsize=setFontSize)
 forage_beta
 dev.off()
 
 ```
+
+

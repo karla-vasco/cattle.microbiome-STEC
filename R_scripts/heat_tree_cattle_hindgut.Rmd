@@ -1,0 +1,112 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+#Libraries
+```{r}
+library("phyloseq")
+library("ggplot2")
+library(DESeq2)
+```
+
+#Importing files for microbiome analysis with phyloseq
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects")
+
+#read in otu table
+otu_table = read.csv("otu_table_97.csv",sep=",",row.names=1)
+otu_table=as.matrix(otu_table,rownames=TRUE)
+#read in taxonomy
+taxonomy = read.csv("taxonomy_97.csv",sep=",",row.names=1)
+taxonomy=as.matrix(taxonomy)
+#read in metadata
+metadata=read.table("metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+metadata
+phy_tree = read_tree("tree_97.nwk")
+```
+
+##Generating a phyloseq object 
+```{r}
+#import as phyloseq objects
+OTU = otu_table(otu_table,taxa_are_rows=TRUE)
+TAX = tax_table(taxonomy)
+META = sample_data(metadata)
+META$Phase=as.factor(META$Phase)
+META$STEC=as.factor(META$STEC)
+META$STEC=as.factor(META$STEC)
+META$STEC_prev_group <- factor(META$STEC_prev_group, levels = c("Low","High"))
+
+# Sanity checks for consistent OTU names
+taxa_names(TAX)
+taxa_names(OTU)
+taxa_names(phy_tree)
+
+# Same sample names
+sample_names(OTU)
+sample_names(META)
+
+#(tree was already imported as a phyloseq object)
+physeq=phyloseq(OTU,TAX,META,phy_tree)
+```
+
+#Filtering samples and taxa for further analyses
+```{r}
+physeq_two = subset_taxa(physeq, Order != "Chloroplast")
+physeq_three = subset_taxa(physeq_two, Family != "Mitochondria")
+physeq_hindgut <- subset_samples(physeq_three, Type%in%c("RAJ","FG"))
+physeq_STEC <- subset_samples(physeq_hindgut, STEC%in%c("1","0"))
+physeq_dairy <- subset_samples(physeq_STEC, Herdtype%in%c("Dairy"))
+
+physeq = physeq_dairy
+```
+
+##Transform counts
+```{r}
+phy_fam <- tax_glom(physeq, taxrank = 'Family')
+physeq_t  = transform_sample_counts(phy_fam, function(x) x / sum(x)/360)
+physeq_t1 = phyloseq::filter_taxa(physeq_t, function(x) mean(x) > 1e-7, TRUE)
+```
+
+#METACODER
+```{r}
+#https://grunwaldlab.github.io/metacoder_documentation/workshop--05--plotting.html
+#https://cran.r-project.org/web/packages/metacoder/metacoder.pdf
+#https://rdrr.io/cran/metacoder/man/heat_tree_matrix.html
+#https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005404
+
+#install.packages("metacoder")
+#install.packages("ggplot2")
+library(metacoder)
+library(ggplot2)
+library(taxa)
+```
+
+#convert phyloseq to metacoder object
+```{r}
+cattle = parse_phyloseq(physeq_t1)
+```
+
+
+#4. Add a new column with the taxa proportions named taxon_counts$total
+```{r}
+cattle$data$taxon_counts <- calc_taxon_abund(cattle, data = "otu_table")
+cattle$data$taxon_counts$total <- rowSums(cattle$data$taxon_counts[, -1]) # -1 = taxon_id column
+```
+
+##Heatmap
+```{r}
+gut_Family = cattle %>%
+  heat_tree(node_label = taxon_names,
+            node_size = cattle$data$taxon_counts$total,
+            node_size_range = c(0.01, 0.05),
+            edge_size_range = c(0.005, 0.005),
+            node_color = cattle$data$taxon_counts$total,
+           # initial_layout = "fr", layout = "fr",
+            node_color_axis_label = "Proportion")
+gut_Family
+```
+
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021")
+ggsave(gut_Family, filename = 'dairy_STEC_heat_tree.pdf', width = 6, height = 8)
+```

@@ -1,0 +1,892 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+---
+title: "R Notebook"
+output: html_notebook
+---
+#Libraries
+```{r}
+library("phyloseq")
+library("ggplot2")
+library(DESeq2)
+```
+
+#Importing files for microbiome analysis with phyloseq
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects")
+
+#read in otu table
+otu_table = read.csv("otu_table_97.csv",sep=",",row.names=1)
+otu_table=as.matrix(otu_table,rownames=TRUE)
+#read in taxonomy
+taxonomy = read.csv("taxonomy_97.csv",sep=",",row.names=1)
+taxonomy=as.matrix(taxonomy)
+#read in metadata
+metadata=read.table("metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+metadata
+phy_tree = read_tree("tree_97.nwk")
+```
+
+##Generating a phyloseq object 
+```{r}
+#import as phyloseq objects
+OTU = otu_table(otu_table,taxa_are_rows=TRUE)
+TAX = tax_table(taxonomy)
+META = sample_data(metadata)
+META$Phase=as.factor(META$Phase)
+META$STEC=as.factor(META$STEC)
+META$STEC=as.factor(META$STEC)
+META$STEC_prev_group <- factor(META$STEC_prev_group, levels = c("Low","High"))
+
+# Sanity checks for consistent OTU names
+taxa_names(TAX)
+taxa_names(OTU)
+taxa_names(phy_tree)
+
+# Same sample names
+sample_names(OTU)
+sample_names(META)
+
+#(tree was already imported as a phyloseq object)
+physeq=phyloseq(OTU,TAX,META,phy_tree)
+```
+
+#Filtering samples and taxa for further analyses
+```{r}
+physeq_two = subset_taxa(physeq, Order != "Chloroplast")
+physeq_three = subset_taxa(physeq_two, Family != "Mitochondria")
+physeq_hindgut <- subset_samples(physeq_three, Type%in%c("RAJ","FG"))
+physeq_forage <- subset_samples(physeq_hindgut,!is.na(Pforage))
+physeq_TEMP <- subset_samples(physeq_hindgut,!is.na(TempC_avg_5D))
+physeq_STEC <- subset_samples(physeq_hindgut, STEC%in%c("1","0"))
+physeq_DIM <- subset_samples(physeq_hindgut,!is.na(DIM))
+physeq_LAC <- subset_samples(physeq_hindgut,!is.na(LACT))
+
+```
+
+#FORAGE
+```{r}
+physeq = physeq_forage
+```
+
+#PHYLUM
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_phy <- tax_glom(physeq, taxrank = 'Phylum')
+
+#Transform abundance table to data-frame
+df_phy <- psmelt(glom_phy)
+
+#Group ASVs at the genus level
+grouped_phylum <- df_phy %>%
+  select(Sample, Phylum, Abundance)
+
+phylum_matrix = reshape(grouped_phylum,idvar="Sample",timevar = "Phylum", times = "Abundance",direction="wide")
+
+
+write.table(phylum_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance_all.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Phylum objects
+```{r}
+#metadata
+coldata=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects/metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+coldata <- subset(coldata, Type%in%c("RAJ","FG"))
+coldata <- subset(coldata, !is.na(Pforage))
+
+#abundance table by sample
+cts_phylum=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance_all.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_phylum <- t(cts_phylum)
+cts_phylum <-  as.data.frame(cts_phylum)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Phylum PFORAGE
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_phylum,
+                              colData = coldata,
+                              design= ~Pforage)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="Pforage")
+```
+
+##Export table with differentially abundant Phylum PFORAGE
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.07
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_pforage_phylum.csv") #Writing `sigtab` to
+```
+
+#FAMILY
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_fam <- tax_glom(physeq, taxrank = 'Family')
+
+#Transform abundance table to data-frame
+df_fam <- psmelt(glom_fam)
+
+#Group ASVs at the genus level
+grouped_family <- df_fam %>%
+  select(Sample, Family, Abundance)
+
+family_matrix = reshape(grouped_family,idvar="Sample",timevar = "Family", times = "Abundance",direction="wide")
+
+
+write.table(family_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance_forage.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Family objects
+```{r}
+#abundance table by sample
+cts_family=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance_forage.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_family <- t(cts_family)
+cts_family <-  as.data.frame(cts_family)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Family Pforage
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_family,
+                              colData = coldata,
+                              design= ~Pforage)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="Pforage")
+```
+
+##Export table with differentially abundant Family forage
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_pforage_family.csv") #Writing `sigtab` to
+```
+
+
+#GENUS
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_gen <- tax_glom(physeq, taxrank = 'Genus')
+
+#Transform abundance table to data-frame
+df_gen <- psmelt(glom_gen)
+
+#Group ASVs at the genus level
+grouped_genus <- df_gen %>%
+  select(Sample, Genus, Abundance)
+
+genus_matrix = reshape(grouped_genus,idvar="Sample",timevar = "Genus", times = "Abundance",direction="wide")
+
+
+write.table(genus_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance_pforage.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Genus objects
+```{r}
+#abundance table by sample
+cts_genus=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance_pforage.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_genus <- t(cts_genus)
+cts_genus <-  as.data.frame(cts_genus)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Genus Pforage
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_genus,
+                              colData = coldata,
+                              design= ~Pforage)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="Pforage")
+```
+
+##Export table with differentially abundant Genus Pforage
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_pforage_genus.csv") #Writing `sigtab` to
+```
+
+#TEMPERATURE
+```{r}
+physeq = physeq_TEMP 
+```
+
+#PHYLUM
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_phy <- tax_glom(physeq, taxrank = 'Phylum')
+
+#Transform abundance table to data-frame
+df_phy <- psmelt(glom_phy)
+
+#Group ASVs at the genus level
+grouped_phylum <- df_phy %>%
+  select(Sample, Phylum, Abundance)
+
+phylum_matrix = reshape(grouped_phylum,idvar="Sample",timevar = "Phylum", times = "Abundance",direction="wide")
+
+
+write.table(phylum_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance_TEMP.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Phylum objects
+```{r}
+#metadata
+coldata=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects/metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+coldata <- subset(coldata, Type%in%c("RAJ","FG"))
+coldata <- subset(coldata, !is.na(TempC_avg_5D))
+
+#abundance table by sample
+cts_phylum=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance_TEMP.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_phylum <- t(cts_phylum)
+cts_phylum <-  as.data.frame(cts_phylum)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Phylum TEMP
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_phylum,
+                              colData = coldata,
+                              design= ~TempC_avg_5D)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="TempC_avg_5D")
+```
+
+##Export table with differentially abundant TEMP
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.07
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_TEMP_phylum.csv") #Writing `sigtab` to
+```
+
+#FAMILY
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_fam <- tax_glom(physeq, taxrank = 'Family')
+
+#Transform abundance table to data-frame
+df_fam <- psmelt(glom_fam)
+
+#Group ASVs at the genus level
+grouped_family <- df_fam %>%
+  select(Sample, Family, Abundance)
+
+family_matrix = reshape(grouped_family,idvar="Sample",timevar = "Family", times = "Abundance",direction="wide")
+
+
+write.table(family_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance_TEMP.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Family objects
+```{r}
+#abundance table by sample
+cts_family=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance_TEMP.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_family <- t(cts_family)
+cts_family <-  as.data.frame(cts_family)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Family TEMP
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_family,
+                              colData = coldata,
+                              design= ~TempC_avg_5D)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="TempC_avg_5D")
+```
+
+##Export table with differentially abundant Family TEMP
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_TEMP_family.csv") #Writing `sigtab` to
+```
+
+
+#GENUS
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_gen <- tax_glom(physeq, taxrank = 'Genus')
+
+#Transform abundance table to data-frame
+df_gen <- psmelt(glom_gen)
+
+#Group ASVs at the genus level
+grouped_genus <- df_gen %>%
+  select(Sample, Genus, Abundance)
+
+genus_matrix = reshape(grouped_genus,idvar="Sample",timevar = "Genus", times = "Abundance",direction="wide")
+
+
+write.table(genus_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance_TEMP.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Genus objects
+```{r}
+#abundance table by sample
+cts_genus=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance_TEMP.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_genus <- t(cts_genus)
+cts_genus <-  as.data.frame(cts_genus)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Genus TEMP
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_genus,
+                              colData = coldata,
+                              design= ~TempC_avg_5D)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="TempC_avg_5D")
+```
+
+##Export table with differentially abundant Genus TEMP
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_TEMP_genus.csv") #Writing `sigtab` to
+```
+
+#LACT
+```{r}
+physeq = physeq_LAC 
+```
+
+#PHYLUM
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_phy <- tax_glom(physeq, taxrank = 'Phylum')
+
+#Transform abundance table to data-frame
+df_phy <- psmelt(glom_phy)
+
+#Group ASVs at the genus level
+grouped_phylum <- df_phy %>%
+  select(Sample, Phylum, Abundance)
+
+phylum_matrix = reshape(grouped_phylum,idvar="Sample",timevar = "Phylum", times = "Abundance",direction="wide")
+
+
+write.table(phylum_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance_LACT.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Phylum objects
+```{r}
+#metadata
+coldata=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects/metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+coldata <- subset(coldata, Type%in%c("RAJ","FG"))
+coldata <- subset(coldata, !is.na(LACT))
+
+#abundance table by sample
+cts_phylum=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance_LACT.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_phylum <- t(cts_phylum)
+cts_phylum <-  as.data.frame(cts_phylum)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Phylum LACT
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_phylum,
+                              colData = coldata,
+                              design= ~LACT)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="LACT")
+```
+
+##Export table with differentially abundant Phylum LACT
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.07
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_LACT_phylum.csv") #Writing `sigtab` to
+```
+
+#FAMILY
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_fam <- tax_glom(physeq, taxrank = 'Family')
+
+#Transform abundance table to data-frame
+df_fam <- psmelt(glom_fam)
+
+#Group ASVs at the genus level
+grouped_family <- df_fam %>%
+  select(Sample, Family, Abundance)
+
+family_matrix = reshape(grouped_family,idvar="Sample",timevar = "Family", times = "Abundance",direction="wide")
+
+
+write.table(family_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance_LACT.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Family objects
+```{r}
+#abundance table by sample
+cts_family=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance_LACT.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_family <- t(cts_family)
+cts_family <-  as.data.frame(cts_family)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Family LACT
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_family,
+                              colData = coldata,
+                              design= ~LACT)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="LACT")
+```
+
+##Export table with differentially abundant Family LACT
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_LACT_family.csv") #Writing `sigtab` to
+```
+
+
+#GENUS
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_gen <- tax_glom(physeq, taxrank = 'Genus')
+
+#Transform abundance table to data-frame
+df_gen <- psmelt(glom_gen)
+
+#Group ASVs at the genus level
+grouped_genus <- df_gen %>%
+  select(Sample, Genus, Abundance)
+
+genus_matrix = reshape(grouped_genus,idvar="Sample",timevar = "Genus", times = "Abundance",direction="wide")
+
+
+write.table(genus_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance_LACT.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Genus objects
+```{r}
+#abundance table by sample
+cts_genus=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance_LACT.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_genus <- t(cts_genus)
+cts_genus <-  as.data.frame(cts_genus)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Genus LACT
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_genus,
+                              colData = coldata,
+                              design= ~LACT)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="LACT")
+```
+
+##Export table with differentially abundant Genus LACT
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_LACT_genus.csv") #Writing `sigtab` to
+```
+
+#DIM
+```{r}
+physeq = physeq_DIM
+```
+
+#PHYLUM
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_phy <- tax_glom(physeq, taxrank = 'Phylum')
+
+#Transform abundance table to data-frame
+df_phy <- psmelt(glom_phy)
+
+#Group ASVs at the genus level
+grouped_phylum <- df_phy %>%
+  select(Sample, Phylum, Abundance)
+
+phylum_matrix = reshape(grouped_phylum,idvar="Sample",timevar = "Phylum", times = "Abundance",direction="wide")
+
+
+write.table(phylum_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance_DIM.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Phylum objects
+```{r}
+#metadata
+coldata=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects/metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+coldata <- subset(coldata, Type%in%c("RAJ","FG"))
+coldata <- subset(coldata, !is.na(DIM))
+
+#abundance table by sample
+cts_phylum=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance_DIM.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_phylum <- t(cts_phylum)
+cts_phylum <-  as.data.frame(cts_phylum)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Phylum DIM
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_phylum,
+                              colData = coldata,
+                              design= ~DIM)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="DIM")
+```
+
+##Export table with differentially abundant Phylum DIM
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.07
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_DIM_phylum.csv") #Writing `sigtab` to
+```
+
+#FAMILY
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_fam <- tax_glom(physeq, taxrank = 'Family')
+
+#Transform abundance table to data-frame
+df_fam <- psmelt(glom_fam)
+
+#Group ASVs at the genus level
+grouped_family <- df_fam %>%
+  select(Sample, Family, Abundance)
+
+family_matrix = reshape(grouped_family,idvar="Sample",timevar = "Family", times = "Abundance",direction="wide")
+
+
+write.table(family_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance_DIM.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Family objects
+```{r}
+#abundance table by sample
+cts_family=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance_DIM.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_family <- t(cts_family)
+cts_family <-  as.data.frame(cts_family)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Family DIM
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_family,
+                              colData = coldata,
+                              design= ~DIM)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="DIM")
+```
+
+##Export table with differentially abundant Family DIM
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_DIM_family.csv") #Writing `sigtab` to
+```
+
+
+#GENUS
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_gen <- tax_glom(physeq, taxrank = 'Genus')
+
+#Transform abundance table to data-frame
+df_gen <- psmelt(glom_gen)
+
+#Group ASVs at the genus level
+grouped_genus <- df_gen %>%
+  select(Sample, Genus, Abundance)
+
+genus_matrix = reshape(grouped_genus,idvar="Sample",timevar = "Genus", times = "Abundance",direction="wide")
+
+
+write.table(genus_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance_DIM.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Genus objects
+```{r}
+#abundance table by sample
+cts_genus=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance_DIM.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_genus <- t(cts_genus)
+cts_genus <-  as.data.frame(cts_genus)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Genus DIM
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_genus,
+                              colData = coldata,
+                              design= ~DIM)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="DIM")
+```
+
+##Export table with differentially abundant Genus DIM
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_DIM_genus.csv") #Writing `sigtab` to
+```
+
+#Clusters 8B
+```{r}
+physeq_8B <- subset_samples(physeq_hindgut,Farm%in%c("8B"))
+physeq <- physeq_8B
+
+```
+
+#PHYLUM
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_phy <- tax_glom(physeq, taxrank = 'Phylum')
+
+#Transform abundance table to data-frame
+df_phy <- psmelt(glom_phy)
+
+#Group ASVs at the genus level
+grouped_phylum <- df_phy %>%
+  select(Sample, Phylum, Abundance)
+
+phylum_matrix = reshape(grouped_phylum,idvar="Sample",timevar = "Phylum", times = "Abundance",direction="wide")
+
+
+write.table(phylum_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance_8B.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Phylum objects
+```{r}
+#metadata
+coldata=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/metadata_8B.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+
+#abundance table by sample
+cts_phylum=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance_8B.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_phylum <- t(cts_phylum)
+cts_phylum <-  as.data.frame(cts_phylum)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Phylum DIM
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_phylum,
+                              colData = coldata,
+                              design= ~Phase_cluster)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="Phase_cluster_Cluster2_vs_Cluster1")
+```
+
+##Export table with differentially abundant Phylum DIM
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.07
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_8B_phylum.csv") #Writing `sigtab` to
+```
+
+#FAMILY
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_fam <- tax_glom(physeq, taxrank = 'Family')
+
+#Transform abundance table to data-frame
+df_fam <- psmelt(glom_fam)
+
+#Group ASVs at the genus level
+grouped_family <- df_fam %>%
+  select(Sample, Family, Abundance)
+
+family_matrix = reshape(grouped_family,idvar="Sample",timevar = "Family", times = "Abundance",direction="wide")
+
+
+write.table(family_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance_8B.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Family objects
+```{r}
+#abundance table by sample
+cts_family=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance_8B.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_family <- t(cts_family)
+cts_family <-  as.data.frame(cts_family)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Family DIM
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_family,
+                              colData = coldata,
+                              design= ~Phase_cluster)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="Phase_cluster_Cluster2_vs_Cluster1")
+```
+
+##Export table with differentially abundant Family DIM
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_8B_family.csv") #Writing `sigtab` to
+```
+
+
+#GENUS
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_gen <- tax_glom(physeq, taxrank = 'Genus')
+
+#Transform abundance table to data-frame
+df_gen <- psmelt(glom_gen)
+
+#Group ASVs at the genus level
+grouped_genus <- df_gen %>%
+  select(Sample, Genus, Abundance)
+
+genus_matrix = reshape(grouped_genus,idvar="Sample",timevar = "Genus", times = "Abundance",direction="wide")
+
+
+write.table(genus_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance_8B.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Genus objects
+```{r}
+#abundance table by sample
+cts_genus=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance_8B.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_genus <- t(cts_genus)
+cts_genus <-  as.data.frame(cts_genus)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Genus DIM
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_genus,
+                              colData = coldata,
+                              design= ~Phase_cluster)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="Phase_cluster_Cluster2_vs_Cluster1")
+```
+
+##Export table with differentially abundant Genus 8B
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_8B_genus.csv") #Writing `sigtab` to
+```

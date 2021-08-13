@@ -1,0 +1,1019 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+#Libraries
+```{r}
+library("phyloseq")
+library("ggplot2")
+library(DESeq2)
+```
+
+#Importing files for microbiome analysis with phyloseq
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/phyloseq_objects")
+
+#read in otu table
+otu_table = read.csv("otu_table_97.csv",sep=",",row.names=1)
+otu_table=as.matrix(otu_table,rownames=TRUE)
+#read in taxonomy
+taxonomy = read.csv("taxonomy_97.csv",sep=",",row.names=1)
+taxonomy=as.matrix(taxonomy)
+#read in metadata
+metadata=read.table("metadata_up.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+metadata
+phy_tree = read_tree("tree_97.nwk")
+```
+
+##Generating a phyloseq object 
+```{r}
+#import as phyloseq objects
+OTU = otu_table(otu_table,taxa_are_rows=TRUE)
+TAX = tax_table(taxonomy)
+META = sample_data(metadata)
+META$Phase=as.factor(META$Phase)
+META$STEC=as.factor(META$STEC)
+META$STEC=as.factor(META$STEC)
+META$STEC_prev_group <- factor(META$STEC_prev_group, levels = c("Low","High"))
+
+# Sanity checks for consistent OTU names
+taxa_names(TAX)
+taxa_names(OTU)
+taxa_names(phy_tree)
+
+# Same sample names
+sample_names(OTU)
+sample_names(META)
+
+#(tree was already imported as a phyloseq object)
+physeq=phyloseq(OTU,TAX,META,phy_tree)
+```
+
+#Filtering samples and taxa for further analyses
+```{r}
+physeq_two = subset_taxa(physeq, Order != "Chloroplast")
+physeq_three = subset_taxa(physeq_two, Family != "Mitochondria")
+physeq_hindgut <- subset_samples(physeq_three, Type%in%c("RAJ","FG"))
+physeq_STEC <- subset_samples(physeq_hindgut, STEC%in%c("1","0"))
+physeq_dairy <- subset_samples(physeq_STEC, Herdtype%in%c("Dairy"))
+
+physeq = physeq_dairy
+```
+
+#OTU
+#PHYLUM
+```{r}
+library(tidyverse)
+
+#Transform abundance table to data-frame
+df_phy <- psmelt(glom_phy)
+
+#Group ASVs at the genus level
+grouped_phylum <- df_phy %>%
+  select(Sample, Phylum, Abundance)
+
+phylum_matrix = reshape(grouped_phylum,idvar="Sample",timevar = "Phylum", times = "Abundance",direction="wide")
+
+
+write.table(phylum_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/OTUabundance.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Phylum objects
+```{r}
+#metadata
+coldata=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/metadata_dairy_STEC.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+#abundance table by sample
+cts_phylum=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_phylum <- t(cts_phylum)
+cts_phylum <-  as.data.frame(cts_phylum)
+#coldata <- as.data.frame(coldata)
+```
+
+#PHYLUM
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_phy <- tax_glom(physeq, taxrank = 'Phylum')
+
+#Transform abundance table to data-frame
+df_phy <- psmelt(glom_phy)
+
+#Group ASVs at the genus level
+grouped_phylum <- df_phy %>%
+  select(Sample, Phylum, Abundance)
+
+phylum_matrix = reshape(grouped_phylum,idvar="Sample",timevar = "Phylum", times = "Abundance",direction="wide")
+
+
+write.table(phylum_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Phylum objects
+```{r}
+#metadata
+coldata=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/metadata_dairy_STEC.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+#abundance table by sample
+cts_phylum=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_phylum <- t(cts_phylum)
+cts_phylum <-  as.data.frame(cts_phylum)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Phylum STEC dairy
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_phylum,
+                              colData = coldata,
+                              design= ~STEC_pos)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="STEC_pos_STEC_vs_Control")
+```
+
+##Export table with differentially abundant Phylum STEC dairy
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_dairy_STEC_phylum.csv") #Writing `sigtab` to
+```
+
+##Volcano plot Phylum STEC dairy
+```{r}
+ # if (!requireNamespace('BiocManager', quietly = TRUE))
+  #  install.packages('BiocManager')
+   # BiocManager::install('EnhancedVolcano')
+
+library(EnhancedVolcano)
+
+phylum_plot <-  EnhancedVolcano(res,
+    lab = rownames(res),
+    x = 'log2FoldChange',
+    pCutoff = 0.01,
+    FCcutoff = 0.2,
+    y = 'pvalue',
+    labvjust = -1,
+    xlim = c(-1,1),
+    ylim = c(0,5),
+    title = "STEC shedders vs. non shedders",
+    subtitle = "Phylum")
+
+phylum_plot
+```
+
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/")
+# mm to inch
+setWidth = 7
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='volcano_dairy_STEC_phylum.pdf',width=setWidth,height=6,pointsize=setFontSize)
+phylum_plot
+dev.off()
+
+```
+#FAMILY
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_fam <- tax_glom(physeq, taxrank = 'Family')
+
+#Transform abundance table to data-frame
+df_fam <- psmelt(glom_fam)
+
+#Group ASVs at the genus level
+grouped_family <- df_fam %>%
+  select(Sample, Family, Abundance)
+
+family_matrix = reshape(grouped_family,idvar="Sample",timevar = "Family", times = "Abundance",direction="wide")
+
+
+write.table(family_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Family objects
+```{r}
+#abundance table by sample
+cts_family=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_family <- t(cts_family)
+cts_family <-  as.data.frame(cts_family)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Family STEC dairy
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_family,
+                              colData = coldata,
+                              design= ~STEC_pos)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="STEC_pos_STEC_vs_Control")
+```
+
+##Export table with differentially abundant Family STEC dairy
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_dairy_STEC_family.csv") #Writing `sigtab` to
+```
+
+##Volcano plot Family STEC dairy
+```{r fig.width=10, fig.height=10}
+
+family_plot <-  EnhancedVolcano(res,
+    lab = rownames(res),
+    x = 'log2FoldChange',
+    pCutoff = 0.05,
+    FCcutoff = 0.5,
+    y = 'pvalue',
+   labvjust = 1.2,
+    labhjust = 2,
+    xlim = c(-5,5),
+    ylim = c(0,5),
+    title = "STEC shedders vs. non shedders",
+    subtitle = "Family",
+    labSize = 4,
+    drawConnectors = T,
+    widthConnectors = .1,
+   typeConnectors = open,
+   arrowheads = F)
+
+family_plot
+```
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/")
+# mm to inch
+setWidth = 8
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='volcano_dairy_STEC_family.pdf',width=setWidth,height=10,pointsize=setFontSize)
+family_plot
+dev.off()
+
+```
+
+#GENUS
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_gen <- tax_glom(physeq, taxrank = 'Genus')
+
+#Transform abundance table to data-frame
+df_gen <- psmelt(glom_gen)
+
+#Group ASVs at the genus level
+grouped_genus <- df_gen %>%
+  select(Sample, Genus, Abundance)
+
+genus_matrix = reshape(grouped_genus,idvar="Sample",timevar = "Genus", times = "Abundance",direction="wide")
+
+
+write.table(genus_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Genus objects
+```{r}
+#abundance table by sample
+cts_genus=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_genus <- t(cts_genus)
+cts_genus <-  as.data.frame(cts_genus)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Genus STEC dairy
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_genus,
+                              colData = coldata,
+                              design= ~STEC_pos)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="STEC_pos_STEC_vs_Control")
+```
+
+##Export table with differentially abundant Genus STEC dairy
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_dairy_STEC_genus.csv") #Writing `sigtab` to
+```
+
+##Volcano plot Genus STEC dairy
+```{r fig.width=10, fig.height=10}
+
+genus_plot <-  EnhancedVolcano(res,
+    lab = rownames(res),
+    x = 'log2FoldChange',
+    pCutoff = 0.05,
+    FCcutoff = 0.5,
+    y = 'pvalue',
+   labvjust = 1.2,
+    labhjust = 2,
+    xlim = c(-5,5),
+    ylim = c(0,5),
+    title = "STEC shedders vs. non shedders",
+    subtitle = "Genus",
+    labSize = 4,
+   labFace = "italic",
+    drawConnectors = T,
+    widthConnectors = .1,
+   typeConnectors = open,
+   arrowheads = F)
+
+genus_plot
+```
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/")
+# mm to inch
+setWidth = 10
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='volcano_dairy_STEC_genus.pdf',width=setWidth,height=10,pointsize=setFontSize)
+genus_plot
+dev.off()
+
+```
+
+#CLASS
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_class <- tax_glom(physeq, taxrank = 'Class')
+
+#Transform abundance table to data-frame
+df_class <- psmelt(glom_class)
+
+#Group ASVs at the genus level
+grouped_class <- df_class %>%
+  select(Sample, Class, Abundance)
+
+class_matrix = reshape(grouped_class,idvar="Sample",timevar = "Class", times = "Abundance",direction="wide")
+
+
+write.table(class_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/class_abundance_dairy_STEC.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##CLASS objects
+```{r}
+#abundance table by sample
+cts_class=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/class_abundance_dairy_STEC.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_class <- t(cts_class)
+cts_class <-  as.data.frame(cts_class)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis class STEC dairy
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_class,
+                              colData = coldata,
+                              design= ~STEC_pos)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="STEC_pos_STEC_vs_Control")
+```
+
+##Export table with differentially abundant class STEC dairy
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_dairy_STEC_class.csv") #Writing `sigtab` to
+```
+
+##Volcano plot class STEC dairy
+```{r fig.width=10, fig.height=5}
+
+class_plot <-  EnhancedVolcano(res,
+    lab = rownames(res),
+    x = 'log2FoldChange',
+    pCutoff = 0.05,
+    FCcutoff = 0.5,
+    y = 'pvalue',
+   labvjust = 1.2,
+    labhjust = 2,
+    xlim = c(-5,5),
+    ylim = c(0,5),
+    title = "STEC shedders vs. non shedders",
+    subtitle = "Genus",
+    labSize = 4,
+    drawConnectors = T,
+    widthConnectors = .1,
+   typeConnectors = open,
+   arrowheads = F)
+
+class_plot
+```
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/")
+# mm to inch
+setWidth = 10
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='volcano_dairy_STEC_class.pdf',width=setWidth,height=5,pointsize=setFontSize)
+class_plot
+dev.off()
+
+```
+
+#ORDER
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_order <- tax_glom(physeq, taxrank = 'Order')
+
+#Transform abundance table to data-frame
+df_order <- psmelt(glom_order)
+
+#Group ASVs at the genus level
+grouped_order <- df_order %>%
+  select(Sample, Order, Abundance)
+
+order_matrix = reshape(grouped_order,idvar="Sample",timevar = "Order", times = "Abundance",direction="wide")
+
+
+write.table(order_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/order_abundance_dairy_STEC.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##CLASS objects
+```{r}
+#abundance table by sample
+cts_order=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/order_abundance_dairy_STEC.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_order <- t(cts_order)
+cts_order <-  as.data.frame(cts_order)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis class STEC dairy
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_order,
+                              colData = coldata,
+                              design= ~STEC_pos)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="STEC_pos_STEC_vs_Control")
+```
+
+##Export table with differentially abundant order STEC dairy
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_dairy_STEC_order.csv") #Writing `sigtab` to
+```
+
+##Volcano plot class STEC dairy
+```{r fig.width=10, fig.height=5}
+
+order_plot <-  EnhancedVolcano(res,
+    lab = rownames(res),
+    x = 'log2FoldChange',
+    pCutoff = 0.05,
+    FCcutoff = 0.5,
+    y = 'pvalue',
+   labvjust = 1.2,
+    labhjust = 2,
+    xlim = c(-5,5),
+    ylim = c(0,5),
+    title = "STEC shedders vs. non shedders",
+    subtitle = "Order",
+    labSize = 4,
+    drawConnectors = T,
+    widthConnectors = .1,
+   typeConnectors = open,
+   arrowheads = F)
+
+order_plot
+```
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/")
+# mm to inch
+setWidth = 10
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='volcano_dairy_STEC_class.pdf',width=setWidth,height=5,pointsize=setFontSize)
+class_plot
+dev.off()
+
+```
+
+#ANALYSIS WITH FARM AS RANDOM EFFECT
+#PHYLUM
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_phy <- tax_glom(physeq, taxrank = 'Phylum')
+
+#Transform abundance table to data-frame
+df_phy <- psmelt(glom_phy)
+
+#Group ASVs at the genus level
+grouped_phylum <- df_phy %>%
+  select(Sample, Phylum, Abundance)
+
+phylum_matrix = reshape(grouped_phylum,idvar="Sample",timevar = "Phylum", times = "Abundance",direction="wide")
+
+
+write.table(phylum_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Phylum objects
+```{r}
+#metadata
+coldata=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/metadata_dairy_STEC.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+#abundance table by sample
+cts_phylum=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/phylum_abundance_dairy.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_phylum <- t(cts_phylum)
+cts_phylum <-  as.data.frame(cts_phylum)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Phylum STEC dairy
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_phylum,
+                              colData = coldata,
+                              design= ~STEC_pos + Farm + STEC_pos:Farm)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="STEC_posSTEC.Farm4D")
+```
+
+##Export table with differentially abundant Phylum STEC dairy
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_dairy_STEC_phylum.csv") #Writing `sigtab` to
+```
+
+##Volcano plot Phylum STEC dairy
+```{r}
+ # if (!requireNamespace('BiocManager', quietly = TRUE))
+  #  install.packages('BiocManager')
+   # BiocManager::install('EnhancedVolcano')
+
+library(EnhancedVolcano)
+
+phylum_plot <-  EnhancedVolcano(res,
+    lab = rownames(res),
+    x = 'log2FoldChange',
+    pCutoff = 0.01,
+    FCcutoff = 0.2,
+    y = 'pvalue',
+    labvjust = -1,
+    xlim = c(-1,1),
+    ylim = c(0,5),
+    title = "STEC shedders vs. non shedders",
+    subtitle = "Phylum")
+
+phylum_plot
+```
+
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/")
+# mm to inch
+setWidth = 7
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='volcano_dairy_STEC_phylum.pdf',width=setWidth,height=6,pointsize=setFontSize)
+phylum_plot
+dev.off()
+
+```
+#FAMILY
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_fam <- tax_glom(physeq, taxrank = 'Family')
+
+#Transform abundance table to data-frame
+df_fam <- psmelt(glom_fam)
+
+#Group ASVs at the genus level
+grouped_family <- df_fam %>%
+  select(Sample, Family, Abundance)
+
+family_matrix = reshape(grouped_family,idvar="Sample",timevar = "Family", times = "Abundance",direction="wide")
+
+
+write.table(family_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Family objects
+```{r}
+#abundance table by sample
+cts_family=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/family_abundance.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_family <- t(cts_family)
+cts_family <-  as.data.frame(cts_family)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Family STEC dairy
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_family,
+                              colData = coldata,
+                              design= ~STEC_pos)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="STEC_pos_STEC_vs_Control")
+```
+
+##Export table with differentially abundant Family STEC dairy
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_dairy_STEC_family.csv") #Writing `sigtab` to
+```
+
+##Volcano plot Family STEC dairy
+```{r fig.width=10, fig.height=10}
+
+family_plot <-  EnhancedVolcano(res,
+    lab = rownames(res),
+    x = 'log2FoldChange',
+    pCutoff = 0.05,
+    FCcutoff = 0.5,
+    y = 'pvalue',
+   labvjust = 1.2,
+    labhjust = 2,
+    xlim = c(-5,5),
+    ylim = c(0,5),
+    title = "STEC shedders vs. non shedders",
+    subtitle = "Family",
+    labSize = 4,
+    drawConnectors = T,
+    widthConnectors = .1,
+   typeConnectors = open,
+   arrowheads = F)
+
+family_plot
+```
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/")
+# mm to inch
+setWidth = 8
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='volcano_dairy_STEC_family.pdf',width=setWidth,height=10,pointsize=setFontSize)
+family_plot
+dev.off()
+
+```
+
+#GENUS
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_gen <- tax_glom(physeq, taxrank = 'Genus')
+
+#Transform abundance table to data-frame
+df_gen <- psmelt(glom_gen)
+
+#Group ASVs at the genus level
+grouped_genus <- df_gen %>%
+  select(Sample, Genus, Abundance)
+
+genus_matrix = reshape(grouped_genus,idvar="Sample",timevar = "Genus", times = "Abundance",direction="wide")
+
+
+write.table(genus_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##Genus objects
+```{r}
+#abundance table by sample
+cts_genus=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/genus_abundance.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_genus <- t(cts_genus)
+cts_genus <-  as.data.frame(cts_genus)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis Genus STEC dairy
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_genus,
+                              colData = coldata,
+                              design= ~STEC_pos)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="STEC_pos_STEC_vs_Control")
+```
+
+##Export table with differentially abundant Genus STEC dairy
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_dairy_STEC_genus.csv") #Writing `sigtab` to
+```
+
+##Volcano plot Genus STEC dairy
+```{r fig.width=10, fig.height=10}
+
+genus_plot <-  EnhancedVolcano(res,
+    lab = rownames(res),
+    x = 'log2FoldChange',
+    pCutoff = 0.05,
+    FCcutoff = 0.5,
+    y = 'pvalue',
+   labvjust = 1.2,
+    labhjust = 2,
+    xlim = c(-5,5),
+    ylim = c(0,5),
+    title = "STEC shedders vs. non shedders",
+    subtitle = "Genus",
+    labSize = 4,
+   labFace = "italic",
+    drawConnectors = T,
+    widthConnectors = .1,
+   typeConnectors = open,
+   arrowheads = F)
+
+genus_plot
+```
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/")
+# mm to inch
+setWidth = 10
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='volcano_dairy_STEC_genus.pdf',width=setWidth,height=10,pointsize=setFontSize)
+genus_plot
+dev.off()
+
+```
+
+#CLASS
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_class <- tax_glom(physeq, taxrank = 'Class')
+
+#Transform abundance table to data-frame
+df_class <- psmelt(glom_class)
+
+#Group ASVs at the genus level
+grouped_class <- df_class %>%
+  select(Sample, Class, Abundance)
+
+class_matrix = reshape(grouped_class,idvar="Sample",timevar = "Class", times = "Abundance",direction="wide")
+
+
+write.table(class_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/class_abundance_dairy_STEC.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##CLASS objects
+```{r}
+#abundance table by sample
+cts_class=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/class_abundance_dairy_STEC.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_class <- t(cts_class)
+cts_class <-  as.data.frame(cts_class)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis class STEC dairy
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_class,
+                              colData = coldata,
+                              design= ~STEC_pos)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="STEC_pos_STEC_vs_Control")
+```
+
+##Export table with differentially abundant class STEC dairy
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_dairy_STEC_class.csv") #Writing `sigtab` to
+```
+
+##Volcano plot class STEC dairy
+```{r fig.width=10, fig.height=5}
+
+class_plot <-  EnhancedVolcano(res,
+    lab = rownames(res),
+    x = 'log2FoldChange',
+    pCutoff = 0.05,
+    FCcutoff = 0.5,
+    y = 'pvalue',
+   labvjust = 1.2,
+    labhjust = 2,
+    xlim = c(-5,5),
+    ylim = c(0,5),
+    title = "STEC shedders vs. non shedders",
+    subtitle = "Genus",
+    labSize = 4,
+    drawConnectors = T,
+    widthConnectors = .1,
+   typeConnectors = open,
+   arrowheads = F)
+
+class_plot
+```
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/")
+# mm to inch
+setWidth = 10
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='volcano_dairy_STEC_class.pdf',width=setWidth,height=5,pointsize=setFontSize)
+class_plot
+dev.off()
+
+```
+
+#ORDER
+```{r}
+library(tidyverse)
+
+#Group ASV abundances at genus level
+glom_order <- tax_glom(physeq, taxrank = 'Order')
+
+#Transform abundance table to data-frame
+df_order <- psmelt(glom_order)
+
+#Group ASVs at the genus level
+grouped_order <- df_order %>%
+  select(Sample, Order, Abundance)
+
+order_matrix = reshape(grouped_order,idvar="Sample",timevar = "Order", times = "Abundance",direction="wide")
+
+
+write.table(order_matrix, file = "/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/order_abundance_dairy_STEC.csv", sep = ',', col.names = TRUE, row.names = F)
+```
+
+##CLASS objects
+```{r}
+#abundance table by sample
+cts_order=read.table("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/order_abundance_dairy_STEC.csv", sep = ",", header = TRUE, row.names=1, na.strings = "") 
+
+cts_order <- t(cts_order)
+cts_order <-  as.data.frame(cts_order)
+#coldata <- as.data.frame(coldata)
+```
+
+##DESEQ2 analysis class STEC dairy
+```{r}
+#design = model, control by ~batch and measure effect by condition. batch and condition are columns in coldata
+dds <- DESeqDataSetFromMatrix(countData = cts_order,
+                              colData = coldata,
+                              design= ~STEC_pos)
+dds <- DESeq(dds)
+resultsNames(dds) # lists the coefficients
+
+res <- results(dds, name="STEC_pos_STEC_vs_Control")
+```
+
+##Export table with differentially abundant order STEC dairy
+```{r}
+#res = results(physeq_deseq_test, cooksCutoff = FALSE)
+alpha = 0.1
+sigtab = res[which(res$padj<alpha), ]
+
+write.csv(sigtab, file="/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/deseq2_dairy_STEC_order.csv") #Writing `sigtab` to
+```
+
+##Volcano plot class STEC dairy
+```{r fig.width=10, fig.height=5}
+
+order_plot <-  EnhancedVolcano(res,
+    lab = rownames(res),
+    x = 'log2FoldChange',
+    pCutoff = 0.05,
+    FCcutoff = 0.5,
+    y = 'pvalue',
+   labvjust = 1.2,
+    labhjust = 2,
+    xlim = c(-5,5),
+    ylim = c(0,5),
+    title = "STEC shedders vs. non shedders",
+    subtitle = "Order",
+    labSize = 4,
+    drawConnectors = T,
+    widthConnectors = .1,
+   typeConnectors = open,
+   arrowheads = F)
+
+order_plot
+```
+```{r}
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021/")
+# mm to inch
+setWidth = 10
+
+# font size in pt
+setFontSize = 7
+
+# 1 in R = 0.75pt, so 0.25pt is specified as 
+setLwd <- 0.25/0.75    
+
+
+pdf(file='volcano_dairy_STEC_class.pdf',width=setWidth,height=5,pointsize=setFontSize)
+class_plot
+dev.off()
+
+```

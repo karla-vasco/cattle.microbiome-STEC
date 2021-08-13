@@ -67,6 +67,12 @@ physeq = subset_samples(physeq_long, STEC%in%c("0","1"))
 
 ```
 
+#Rarefraction
+```{r}
+physeq_rarefied <- rarefy_even_depth(physeq, sample.size = min(sample_sums(physeq)),
+  rngseed = FALSE, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+```
+
 #Taxa data frame
 ```{r}
 setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/data/Microbiome_2019/97_table_data/tables_plots")
@@ -260,10 +266,10 @@ chao1_box
 #ALPHA diversity, colors and shape by positive and negative 
 ```{r}
 ##################### Running box plot #############################
-supp.labs <- c("1B   p=0.77", "2D   p = 0.41", "4D   p=0.02", "9D   p=0.11", "8B  p=2.7e-06")
+supp.labs <- c("1B   p=0.66", "2D   p = 0.20", "4D   p=0.002", "9D   p=0.30", "8B  p=1.65e-05")
 names(supp.labs) <- c("1B", "2D","4D","9D","8B")
 
-supp.labs2 <- c("1B   p=0.0008", "2D  p = 0.005", "4D   p=0.9", "9D   p=0.02", "8B   p=7.33e-08")
+supp.labs2 <- c("1B   p=0.018", "2D  p = 0.006", "4D   p=0.35", "9D   p=0.13", "8B   p=1.049e-07")
 names(supp.labs2) <- c("1B", "2D","4D","9D","8B")
 
 shannon_box <- df_alpha %>% #shannon_box, chao1_box
@@ -322,53 +328,29 @@ legend_alpha_STEC
 ```
 
 #BETA DIVERSITY
-```{r}
-wu_plot = plot_ordination(physeq, beta_wu, color="Type", shape="Phase") + theme_bw()+labs(colour = "Farm", shape="Phase")
-wu_plot
-```
+
+#Stats beta
+
+#1B beta
 #Stats beta
 ```{r}
+physeq = subset_samples(physeq_rarefied, Farm%in%c("1B"))
+
 ## PERMANOVA
 library(vegan)
 wuinfrac_dist = phyloseq::distance(physeq, method="wunifrac") #RUN this only once because it takes a lot of time
 adonis_wunifrac = adonis(wuinfrac_dist ~ sample_data(physeq)$Phase)
 adonis_wunifrac
 
-## Significant PERMANOVA indicates that centroid (or spatial median) among groups is different and/or with-group dispersion among groups is different
-
-## PERMDISP
-wuni_disp <-betadisper(wuinfrac_dist, sample_data(physeq)$Phase, type=c("median"))
-anova(wuni_disp)
-
-## If PERMANOVA and PERMDISP are both significant, you can use plotting to tell if PERMANOVA was significant based on centroid (or spatial median)
-plot(wuni_disp)
-#?plot.betadisper
-
-## Would look better with higher replication for groups
-plot(wuni_disp, label = F)
-
-## Plot with 1 standard deviation ellipses around the group medians
-## sample size issue here, but you get the idea
-plot(wuni_disp, label = F, hull = F, ellipse = T)
-
-## Within-group dispersion that PERMDISP is testing
-boxplot(wuni_disp, las = 2, cex.lab=1.5)
-?boxplot
-
-## pairwise p-values
-TukeyHSD(wuni_disp)
-
-scores(wuni_disp, 1:4, display = "centroids")
-
+wu_plot = plot_ordination(physeq, beta_wu, color="Type", shape="Phase") + theme_bw()+labs(colour = "Farm", shape="Phase")
+wu_plot
 ```
 
-
-#1B beta
 ```{r}
 physeq = subset_samples(physeq_long, Farm%in%c("1B"))
 beta_wu <- ordinate(physeq, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
 
-supp.labs <- c("1B  R^2=0.14, p=0.001")
+supp.labs <- c("1B  R^2=0.1, p=0.001")
 names(supp.labs) <- c("1B")
 
 beta_scatter = as.data.frame(beta_wu[["vectors"]])
@@ -379,7 +361,7 @@ beta_meta = beta_meta %>%
   mutate(STEC_presence = dplyr::case_when(STEC == "0" ~ "Negative", T ~ "Positive"))
 
 wu_1BL = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Phase", shape = "STEC_presence", palette = c("#E69F00","#D55E00","#56B4E9","#0072B2"), ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +
-  labs(x = "PCoA 1 (16.7%)", y = "PCoA 2 (11.9%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
+  labs(x = "PCoA 1 (16.5%)", y = "PCoA 2 (5.1%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
   rremove("legend") + 
   facet_wrap(vars(Farm),nrow=1,ncol=1,scales="free",labeller = labeller(Farm = supp.labs))+
   theme_bw()+
@@ -390,9 +372,22 @@ wu_1BL
 
 #2D beta
 ```{r}
-physeq = subset_samples(physeq_long, Farm%in%c("2D"))
+physeq = subset_samples(physeq_rarefied, Farm%in%c("2D"))
+
+## PERMANOVA
+library(vegan)
+wuinfrac_dist = phyloseq::distance(physeq, method="wunifrac") #RUN this only once because it takes a lot of time
+adonis_wunifrac = adonis(wuinfrac_dist ~ sample_data(physeq)$Phase)
+adonis_wunifrac
+
+beta_wu <- ordinate(physeq, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
+wu_plot = plot_ordination(physeq, beta_wu, color="STEC", shape="Phase") +  theme_bw()+labs(shape="Phase")
+wu_plot
+```
+
+```{r}
 beta_wu <- ordinate(physeq, "PCoA", "wunifrac")
-supp.labs <- c("2D R^2=0.13, p=0.001")
+supp.labs <- c("2D R^2=0.08, p=0.001")
 names(supp.labs) <- c("2D")
 
 beta_scatter = as.data.frame(beta_wu[["vectors"]])
@@ -402,7 +397,7 @@ beta_meta$STEC = as.factor(beta_meta$STEC)
 beta_meta = beta_meta %>% 
   mutate(STEC_presence = dplyr::case_when(STEC == "0" ~ "Negative", T ~ "Positive"))
 wu_2DL = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Phase", shape = "STEC_presence", palette = c("#E69F00","#D55E00","#56B4E9","#0072B2"), ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +
-  labs(x = "PCoA 1 (10.4%)", y = "PCoA 2 (8.7%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
+  labs(x = "PCoA 1 (6.8%)", y = "PCoA 2 (5.9%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
   rremove("legend") + 
   facet_wrap(vars(Farm),nrow=1,ncol=1,scales="free",labeller = labeller(Farm = supp.labs))+
   theme_bw()+
@@ -413,9 +408,22 @@ wu_2DL
 
 #4D beta
 ```{r}
+physeq = subset_samples(physeq_rarefied, Farm%in%c("4D"))
+
+## PERMANOVA
+wuinfrac_dist = phyloseq::distance(physeq, method="wunifrac") #RUN this only once because it takes a lot of time
+adonis_wunifrac = adonis(wuinfrac_dist ~ sample_data(physeq)$Phase)
+adonis_wunifrac
+
+beta_wu <- ordinate(physeq, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
+wu_plot = plot_ordination(physeq, beta_wu, color="STEC", shape="Phase") +  theme_bw()+labs(shape="Phase")
+wu_plot
+```
+
+```{r}
 physeq = subset_samples(physeq_long, Farm%in%c("4D"))
 beta_wu <- ordinate(physeq, "PCoA", "wunifrac")
-supp.labs <- c("4D  R^2=0.06041, p=0.001")
+supp.labs <- c("4D  R^2=0.045, p=0.001")
 names(supp.labs) <- c("4D")
 
 beta_scatter = as.data.frame(beta_wu[["vectors"]])
@@ -425,7 +433,7 @@ beta_meta$STEC = as.factor(beta_meta$STEC)
 beta_meta = beta_meta %>% 
   mutate(STEC_presence = dplyr::case_when(STEC == "0" ~ "Negative", T ~ "Positive"))
 wu_4DL = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Phase", shape = "STEC_presence", palette = c("#D55E00","#56B4E9","#0072B2"), ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +
-  labs(x = "PCoA 1 (18%)", y = "PCoA 2 (10.4%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
+  labs(x = "PCoA 1 (11.1%)", y = "PCoA 2 (6.6%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
   rremove("legend") + 
   facet_wrap(vars(Farm),nrow=1,ncol=1,scales="free",labeller = labeller(Farm = supp.labs))+
   theme_bw()+
@@ -435,9 +443,23 @@ wu_4DL
 ```
 #8B beta
 ```{r}
+physeq = subset_samples(physeq_rarefied, Farm%in%c("8B"))
+
+## PERMANOVA
+wuinfrac_dist = phyloseq::distance(physeq, method="wunifrac") #RUN this only once because it takes a lot of time
+adonis_wunifrac = adonis(wuinfrac_dist ~ sample_data(physeq)$Phase)
+adonis_wunifrac
+
+beta_wu <- ordinate(physeq, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
+wu_plot = plot_ordination(physeq, beta_wu, color="STEC", shape="Phase") +  theme_bw()+labs(shape="Phase")
+wu_plot
+```
+
+```{r}
+
 physeq = subset_samples(physeq_long, Farm%in%c("8B"))
 beta_wu <- ordinate(physeq, "PCoA", "wunifrac")
-supp.labs <- c("8B  R^2=0.21, p=0.001")
+supp.labs <- c("8B  R^2=0.15, p=0.001")
 names(supp.labs) <- c("8B")
 
 beta_scatter = as.data.frame(beta_wu[["vectors"]])
@@ -447,7 +469,7 @@ beta_meta$STEC = as.factor(beta_meta$STEC)
 beta_meta = beta_meta %>% 
   mutate(STEC_presence = dplyr::case_when(STEC == "0" ~ "Negative", T ~ "Positive"))
 wu_8B = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Phase", fill = "Phase", shape = "STEC_presence", palette = c("#E69F00","#D55E00","#56B4E9","#0072B2"), ellipse = TRUE, ellipse.level=.5,mean.point = F , mean.point.size = 5, star.plot = F) +
-  labs(x = "PCoA 1 (29.6%)", y = "PCoA 2 (12.9%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
+  labs(x = "PCoA 1 (10.1%)", y = "PCoA 2 (9.1%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
  # rremove("legend") + 
   facet_wrap(vars(Farm),nrow=1,ncol=1,scales="free",labeller = labeller(Farm = supp.labs))+
   theme_bw()+   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none") + scale_shape_manual (values = c(20,3)) #annotate("text", x = -0.12, y = -0.08, label = "PERMANOVA, p <0.001\nANOVA, p=0.045", colour = "black") 
@@ -455,9 +477,20 @@ wu_8B
 ```
 #9D beta
 ```{r}
-physeq = subset_samples(physeq_long, Farm%in%c("9D"))
-beta_wu <- ordinate(physeq, "PCoA", "wunifrac")
-supp.labs <- c("9D  R^2=0.13, p=0.003")
+physeq = subset_samples(physeq_rarefied, Farm%in%c("9D"))
+
+## PERMANOVA
+wuinfrac_dist = phyloseq::distance(physeq, method="wunifrac") #RUN this only once because it takes a lot of time
+adonis_wunifrac = adonis(wuinfrac_dist ~ sample_data(physeq)$Phase)
+adonis_wunifrac
+
+beta_wu <- ordinate(physeq, "PCoA", "wunifrac") #RUN this only ONCE because it takes a lot of time
+wu_plot = plot_ordination(physeq, beta_wu, color="STEC", shape="Phase") +  theme_bw()+labs(shape="Phase")
+wu_plot
+```
+
+```{r}
+supp.labs <- c("9D  R^2=0.105, p=0.013")
 names(supp.labs) <- c("9D")
 
 beta_scatter = as.data.frame(beta_wu[["vectors"]])
@@ -467,7 +500,7 @@ beta_meta$STEC = as.factor(beta_meta$STEC)
 beta_meta = beta_meta %>% 
   mutate(STEC_presence = dplyr::case_when(STEC == "0" ~ "Negative", T ~ "Positive"))
 wu_9Dt = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Phase", shape = "STEC_presence", fill = "Phase",palette = c("#E69F00","#D55E00","#56B4E9","#0072B2"), ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +
-  labs(x = "PCoA 1 (17.9%)", y = "PCoA 2 (12.7%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
+  labs(x = "PCoA 1 (13.6%)", y = "PCoA 2 (8.5%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
  # rremove("legend") + 
   facet_wrap(vars(Farm),nrow=1,ncol=1,scales="free",labeller = labeller(Farm = supp.labs))+
   theme_bw()+
@@ -475,20 +508,6 @@ wu_9Dt = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Phase", shape
 wu_9Dt
 ```
 
-
-#All farms beta diversity
-```{r}
-beta_scatter = as.data.frame(beta_wu[["vectors"]])
-beta_meta = merge(beta_scatter,metadata,by = 0,all=F)
-beta_meta$Phase = as.factor(beta_meta$Phase)
-pmain_wu = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Phase", palette = c("#E69F00","#D55E00","#56B4E9","#0072B2"), ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +
-  labs(x = "Principal Coordinate 1 (16.5%)", y = "Principal Coordinate 2 (8.6%)", colour = "Phase", fill = "Phase", shape = "Phase") + 
-  rremove("legend") + 
-  facet_wrap(vars(Farm),nrow=1,ncol=5,scales="free")+
-  theme_bw()+
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "top")   #annotate("text", x = -0.12, y = -0.08, label = "PERMANOVA, p <0.001\nANOVA, p=0.045", colour = "black") 
-pmain_wu
-```
 #BETA legend
 ```{r}
 plot_leg_WU = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Phase", shape = "STEC_presence", fill = "Phase",palette = c("#E69F00","#D55E00","#56B4E9","#0072B2"), ellipse = TRUE, ellipse.level=.5,mean.point = F, mean.point.size = 5, star.plot = F) +
@@ -506,78 +525,6 @@ legend_wuL
 ```
 
 
-#legend alpha OLD
-```{r}
-plot_leg <-  df_alpha %>% #shannon_box, chao1_box
-  mutate(x_axis = fct_relevel(Phase, "1","2","3","4")) %>% #Optional if you need a specific x_axis order
-  ggplot(aes(x = Phase, y = Shannon, fill = Farm)) +
-  geom_boxplot(outlier.shape = NA, color = "black") +
-  facet_wrap(vars(Farm),nrow=1,ncol=5,scales="free", labeller = labeller(Farm = supp.labs))+
-  geom_point(alpha=0.2, position = position_jitterdodge()) +
-  labs(y="Shannon", x="Phase", shape = "STEC shedding") + 
-    theme_bw() + 
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
-  theme(legend.position = "top",axis.title.x=element_blank()) + 
- # stat_compare_means(comparisons = my_comparisons, step.increase = .15, symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = FALSE) + 
-  scale_fill_manual(values =c("#73D055FF","#56B4E9","#404788FF","#D55E00","#E69F00")) 
- #+
- # geom_text(aes(label=Study_ID),hjust=0, vjust=0)
-
-# Extract the legend. Returns a gtable
-leg <- get_legend(plot_leg)
-
-# Convert to a ggplot and print
-legend_farm = as_ggplot(leg)
-legend_farm
-
-plot_leg_shape <-  df_alpha %>% #shannon_box, chao1_box
-  mutate(x_axis = fct_relevel(Phase, "1","2","3","4")) %>% #Optional if you need a specific x_axis order
-  ggplot(aes(x = Phase, y = Shannon, shape=STEC.shedding, color=STEC.shedding)) +
- # geom_boxplot(outlier.shape = NA, color = "black") +
-  facet_wrap(vars(Farm),nrow=1,ncol=5,scales="free", labeller = labeller(Farm = supp.labs))+
-  geom_point(alpha=1, position = position_jitterdodge()) +
-  labs(y="Shannon", x="Phase", shape = "STEC shedding",color="STEC shedding") + 
-    theme_bw() + 
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
-  theme(legend.position = "top",axis.title.x=element_blank()) + 
- # stat_compare_means(comparisons = my_comparisons, step.increase = .15, symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns")), tip.length=.02, hide.ns = FALSE) + 
-  scale_fill_manual(values =c("#73D055FF","#56B4E9","#404788FF","#D55E00","#E69F00")) +
-  scale_color_manual(values =c("red","red","red","blue","red")) +  scale_shape_manual(values = c(24,25,23,20,3))
- #+
- # geom_text(aes(label=Study_ID),hjust=0, vjust=0)
-
-# Extract the legend. Returns a gtable
-leg_shape <- get_legend(plot_leg_shape)
-
-# Convert to a ggplot and print
-legend_shape = as_ggplot(leg_shape)
-legend_shape
-```
-
-#legend beta
-```{r}
-plot_leg_WU = ggscatter(beta_meta, x = "Axis.1", y = "Axis.2", color = "Phase", fill = "Phase", shape = "STEC.shedding", palette = c("#E69F00","#D55E00","#56B4E9","#0072B2"), ellipse = TRUE, ellipse.level=.5,mean.point = F , mean.point.size = 5, star.plot = F) +
-  labs(x = "PCoA 1 (29.6%)", y = "PCoA 2 (12.9%)", colour = "Phase", fill = "Phase", shape = "STEC shedding") + 
- # rremove("legend") + 
-  facet_wrap(vars(Farm),nrow=1,ncol=1,scales="free",labeller = labeller(Farm = supp.labs))+
-  theme_bw()+   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "top") + scale_shape_manual (values = c(24,25,23,20,3))
-
-# Extract the legend. Returns a gtable
-leg_wuL <- get_legend(plot_leg_WU)
-
-# Convert to a ggplot and print
-legend_wuL = as_ggplot(leg_wuL)
-legend_wuL
-```
-
-#Diversity plot OLD
-```{r}
-legend_alpha_all = ggarrange(legend_farm,legend_shape, nrow = 1,ncol=2,align="hv")
-beta_div_long = ggarrange(wu_1BL,wu_2DL,wu_4DL,wu_8B,wu_9Dt, nrow = 1,ncol=5,align="hv")
-long_div = ggarrange(legend_alpha_all, shannon_box, chao1_box, legend_wuL, beta_div_long, nrow = 5, ncol = 1, align="hv", heights = c(.3,1,1,.3, 1.5), labels = c("","A","B","","C"))
-long_div
-```
-
 #Diversity plot NEW
 ```{r}
 beta_div_long = ggarrange(wu_1BL,wu_2DL,wu_4DL,wu_8B,wu_9Dt, nrow = 1,ncol=5,align="hv")
@@ -587,7 +534,7 @@ long_div
 
 ```{r}
 
-setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2020/june")
+setwd("/Users/karlavasco/OneDrive\ -\ Michigan\ State\ University/Manning_lab/Microbiome_cattle/results/2021")
 # mm to inch
 setWidth = 12
 
@@ -598,7 +545,7 @@ setFontSize = 7
 setLwd <- 0.25/0.75    
 
 
-pdf(file='Longitudinal_diversity6_presence.pdf',width=setWidth,height=7,pointsize=setFontSize)
+pdf(file='Longitudinal_diversity_rarefied.pdf',width=setWidth,height=7,pointsize=setFontSize)
 long_div
 dev.off()
 
